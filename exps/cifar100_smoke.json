@@ -1,0 +1,18 @@
+{
+    "prefix": "smoke",
+    "dataset": "cifar100",
+    "memory_size": 2000,
+    "memory_per_class": 20,
+    "fixed_memory": false,
+    "shuffle": true,
+    "init_cls": 50,
+    "increment": 50,
+    "model_name": "finetune",
+    "convnet_type": "resnet32",
+    "device": ["0", "1"],
+    "seed": [1993],
+    "init_epoch": 1,
+    "epochs": 1,
+    "batch_size": 128,
+    "num_workers": 2
+}
