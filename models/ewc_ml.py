@@ -50,6 +50,16 @@ class EWC(BaseLearner):
         super().__init__(args)
         self.fisher = None
         self._network = IncrementalNet(args)
+        self.init_epoch = args.get("init_epochs", init_epoch)
+        self.epochs = args.get("epochs", epochs)
+        self.init_lr = args.get("init_lr", init_lr)
+        self.lrate = args.get("lrate", lrate)
+        self.init_weight_decay = args.get("init_weight_decay", init_weight_decay)
+        self.weight_decay = args.get("weight_decay", weight_decay)
+        self.batch_size = args.get("batch_size", batch_size)
+        self.num_workers = args.get("num_workers", num_workers)
+        self.ewc_lambda = args.get("lamda", lamda)
+        self.fishermax = args.get("fishermax", fishermax)
 
     def after_task(self):
         self._known_classes = self._total_classes
@@ -69,13 +79,19 @@ class EWC(BaseLearner):
             source="train"
         )
         self.train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
         )
         test_dataset = data_manager.get_dataset(
             self._cur_task,source='test'
         )
         self.test_loader = DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+            test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
         )
 
         if len(self._multiple_gpus) > 1:
@@ -106,20 +122,20 @@ class EWC(BaseLearner):
         if self._cur_task == 0:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=init_lr,
-                weight_decay=init_weight_decay,
+                lr=self.init_lr,
+                weight_decay=self.init_weight_decay,
             )
             self._init_train(train_loader, test_loader, optimizer)
         else:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=lrate,
-                weight_decay=weight_decay,
+                lr=self.lrate,
+                weight_decay=self.weight_decay,
             )
             self._update_representation(train_loader, test_loader, optimizer)
 
     def _init_train(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(init_epoch))
+        prog_bar = tqdm(range(self.init_epoch))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -138,7 +154,7 @@ class EWC(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                init_epoch,
+                self.init_epoch,
                 losses / len(train_loader),
                 train_map,
                 test_map,
@@ -150,7 +166,7 @@ class EWC(BaseLearner):
         logging.info(info)
 
     def _update_representation(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(epochs))
+        prog_bar = tqdm(range(self.epochs))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -170,7 +186,7 @@ class EWC(BaseLearner):
                 )
 
                 loss_ewc = self.compute_ewc()
-                loss = loss_clf + lamda * loss_ewc
+                loss = loss_clf + self.ewc_lambda * loss_ewc
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -181,7 +197,7 @@ class EWC(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                epochs,
+                self.epochs,
                 losses / len(train_loader),
                 train_map,
                 test_map,
@@ -222,7 +238,7 @@ class EWC(BaseLearner):
             if p.requires_grad
         }
         self._network.train()
-        optimizer = optim.SGD(self._network.parameters(), lr=lrate)
+        optimizer = optim.SGD(self._network.parameters(), lr=self.lrate)
         cost = torch.nn.MultiLabelSoftMarginLoss()
         for i, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(self._device), targets.to(self._device)
@@ -235,7 +251,10 @@ class EWC(BaseLearner):
                     fisher[n] += p.grad.pow(2).clone()
         for n, p in fisher.items():
             fisher[n] = p / len(train_loader)
-            fisher[n] = torch.min(fisher[n], torch.tensor(fishermax))
+            fisher[n] = torch.min(
+                fisher[n],
+                torch.tensor(self.fishermax, device=fisher[n].device, dtype=fisher[n].dtype),
+            )
         return fisher
 
     def fake_target_gen(self,targets):

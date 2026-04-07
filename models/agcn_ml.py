@@ -45,6 +45,15 @@ class AGCN(BaseLearner):
     def __init__(self, args):
         super().__init__(args)
         self._network = IncrementalNet_AGCN(args)
+        self.init_epoch = args.get("init_epochs", init_epoch)
+        self.epochs = args.get("epochs", epochs)
+        self.init_lr = args.get("init_lr", init_lr)
+        self.lrate = args.get("lrate", lrate)
+        self.init_weight_decay = args.get("init_weight_decay", init_weight_decay)
+        self.weight_decay = args.get("weight_decay", weight_decay)
+        self.batch_size = args.get("batch_size", batch_size)
+        self.num_workers = args.get("num_workers", num_workers)
+        self.lamda_kd_logits = args.get("lamda_kd_logits", lamda_kd_logits)
         self.subject = args["subject"]
     def after_task(self):
         self._old_network = self._network.copy().freeze()
@@ -72,20 +81,29 @@ class AGCN(BaseLearner):
             self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, train_y, ld=False)
 
             self.train_loader = DataLoader(
-                TensorDataset(train_x,train_y), batch_size=batch_size, shuffle=True, num_workers=num_workers
+                TensorDataset(train_x,train_y),
+                batch_size=self.batch_size,
+                shuffle=True,
+                num_workers=self.num_workers,
             )
             ######
         else:
             self.label_adj = self.sym_conditional_prob(train_y)
             self.train_loader = DataLoader(
-                train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+                train_dataset,
+                batch_size=self.batch_size,
+                shuffle=True,
+                num_workers=self.num_workers,
             )
 
         test_dataset = data_manager.get_dataset(
             self._cur_task, source="test"
         )
         self.test_loader = DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+            test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
         )
 
         if len(self._multiple_gpus) > 1:
@@ -96,23 +114,24 @@ class AGCN(BaseLearner):
 
     def _train(self, train_loader, test_loader):
         self._network.to(self._device)
+        self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
         if self._cur_task == 0:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=init_lr,
-                weight_decay=init_weight_decay,
+                lr=self.init_lr,
+                weight_decay=self.init_weight_decay,
             )
             self._init_train(train_loader, test_loader, optimizer)
         else:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=lrate,
-                weight_decay=weight_decay,
+                lr=self.lrate,
+                weight_decay=self.weight_decay,
             )  # 1e-5
             self._update_representation(train_loader, test_loader, optimizer)
 
     def _init_train(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(init_epoch))
+        prog_bar = tqdm(range(self.init_epoch))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -133,7 +152,7 @@ class AGCN(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                init_epoch,
+                self.init_epoch,
                 losses / len(train_loader),
                 train_map,
                 test_map,
@@ -145,9 +164,11 @@ class AGCN(BaseLearner):
         logging.info(info)
 
     def _update_representation(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(epochs))
+        prog_bar = tqdm(range(self.epochs))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         trans = torch.nn.Sigmoid()
+        self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
+        self._set_runtime_label_adj(self._old_network, self._old_label_adj.to(self._device))
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -166,7 +187,7 @@ class AGCN(BaseLearner):
                 loss_kd_logits = cost(logits[:,:self._known_classes],trans(self._old_network(inputs,self._old_label_adj)))
 
 
-                loss = loss_clf + lamda_kd_logits * loss_kd_logits
+                loss = loss_clf + self.lamda_kd_logits * loss_kd_logits
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -176,7 +197,7 @@ class AGCN(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                epochs,
+                self.epochs,
                 losses / len(train_loader),
                 train_map,
                 test_map,

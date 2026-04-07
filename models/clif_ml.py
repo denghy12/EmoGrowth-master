@@ -64,11 +64,31 @@ class CLIF(BaseLearner):
     def __init__(self, args):
         super().__init__(args)
         self._network = IncrementalNet_CLIF(args)
+        self.init_epoch = args.get("init_epochs", init_epoch)
+        self.epochs = args.get("epochs", epochs)
+        self.init_lr = args.get("init_lr", init_lr)
+        self.lrate = args.get("lrate", lrate)
+        self.init_weight_decay = args.get("init_weight_decay", init_weight_decay)
+        self.weight_decay = args.get("weight_decay", weight_decay)
+        self.batch_size = args.get("batch_size", batch_size)
+        self.num_workers = args.get("num_workers", num_workers)
+        self.lamda_kd_logits = args.get("lamda_kd_logits", lamda_kd_logits)
         self.ld = args["ld"]
         self.lamda_kd_relation_aff = args['lamda_kd_relation_aff']
         self.lamda_kd_relation_data = args['lamda_kd_relation_data']
         self.lamda_le = args['lamda_le']
         self.subject = args["subject"]
+        self.dataset = args.get("dataset", "")
+
+    @staticmethod
+    def _normalize_label_embedding(label_embedding, label_adj):
+        expected = label_adj.shape[0]
+        if label_embedding.shape[0] == expected:
+            return label_embedding
+        # DataParallel gathers per-replica label embeddings by concatenating
+        # along dim 0, but each replica produces the same class embeddings.
+        return label_embedding[:expected]
+
     def after_task(self):
         self._old_network = self._network.copy().freeze()
         self._known_classes = self._total_classes
@@ -101,20 +121,29 @@ class CLIF(BaseLearner):
             # )
             ### 引入消歧计算标签共生但不用于计算知识蒸馏 args_ld is true###
             self.train_loader = DataLoader(
-                TensorDataset(train_x,train_y,soft_label_known.cpu(),train_affective_dimension), batch_size=batch_size, shuffle=True, num_workers=num_workers
+                TensorDataset(train_x,train_y,soft_label_known.cpu(),train_affective_dimension),
+                batch_size=self.batch_size,
+                shuffle=True,
+                num_workers=self.num_workers,
             )
             ######
         else:
             self.label_adj = self.sym_conditional_prob(train_y)
             self.train_loader = DataLoader(
-                train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+                train_dataset,
+                batch_size=self.batch_size,
+                shuffle=True,
+                num_workers=self.num_workers,
             )
 
         test_dataset = data_manager.get_dataset(
             self._cur_task, source="test"
         )
         self.test_loader = DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+            test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
         )
 
         if len(self._multiple_gpus) > 1:
@@ -125,23 +154,24 @@ class CLIF(BaseLearner):
 
     def _train(self, train_loader, test_loader):
         self._network.to(self._device)
+        self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
         if self._cur_task == 0:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=init_lr,
-                weight_decay=init_weight_decay,
+                lr=self.init_lr,
+                weight_decay=self.init_weight_decay,
             )
             self._init_train(train_loader, test_loader, optimizer)
         else:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=lrate,
-                weight_decay=weight_decay,
+                lr=self.lrate,
+                weight_decay=self.weight_decay,
             )  # 1e-5
             self._update_representation(train_loader, test_loader, optimizer)
 
     def _init_train(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(init_epoch))
+        prog_bar = tqdm(range(self.init_epoch))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         emb_cost = LinkPredictionLoss_cosine()
         for _, epoch in enumerate(prog_bar):
@@ -152,6 +182,7 @@ class CLIF(BaseLearner):
                 label_adj = self.label_adj.to(self._device)
                 loss_adj = label_adj + torch.eye(label_adj.data.size(0), dtype=label_adj.data.dtype,device=label_adj.data.device) ###identity matrix included###
                 logits,label_embedding = self._network(inputs,label_adj)
+                label_embedding = self._normalize_label_embedding(label_embedding, label_adj)
                 loss_clf = cost(logits, targets)
                 loss_le = emb_cost(label_embedding,loss_adj)
                 loss = loss_clf + self.lamda_le * loss_le
@@ -165,7 +196,7 @@ class CLIF(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                init_epoch,
+                self.init_epoch,
                 losses / len(train_loader),
                 train_map,
                 test_map,
@@ -177,10 +208,12 @@ class CLIF(BaseLearner):
         logging.info(info)
 
     def _update_representation(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(epochs))
+        prog_bar = tqdm(range(self.epochs))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         emb_cost = LinkPredictionLoss_cosine()
         trans = torch.nn.Sigmoid()
+        self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
+        self._set_runtime_label_adj(self._old_network, self._old_label_adj.to(self._device))
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -193,6 +226,7 @@ class CLIF(BaseLearner):
                 label_adj = self.label_adj.to(self._device)
                 loss_adj = label_adj + torch.eye(label_adj.data.size(0), dtype=label_adj.data.dtype,device=label_adj.data.device) ###identity matrix included###
                 logits,label_embedding = self._network(inputs,label_adj)
+                label_embedding = self._normalize_label_embedding(label_embedding, label_adj)
 
                 ### 基于样本相似度的知识蒸馏 ###
                 _, _, feature_old = self._old_network(inputs,self._old_label_adj.to(self._device),kd=True)
@@ -211,7 +245,7 @@ class CLIF(BaseLearner):
                 # loss = loss_clf + self.lamda_le * loss_le + self.lamda_kd_relation_data * loss_kd_relation_1 + lamda_kd_logits * loss_kd_logits ### 删除情感维度蒸馏 ###
                 # loss = loss_clf + self.lamda_le * loss_le + self.lamda_kd_relation_aff * loss_kd_relation_2 + lamda_kd_logits * loss_kd_logits ### 删除样本蒸馏 ###
                 # loss = loss_clf + self.lamda_le * loss_le + lamda_kd_logits * loss_kd_logits ### 删除relation蒸馏 ###
-                loss = loss_clf + self.lamda_le * loss_le + self.lamda_kd_relation_data * loss_kd_relation_1 + self.lamda_kd_relation_aff * loss_kd_relation_2 + lamda_kd_logits * loss_kd_logits
+                loss = loss_clf + self.lamda_le * loss_le + self.lamda_kd_relation_data * loss_kd_relation_1 + self.lamda_kd_relation_aff * loss_kd_relation_2 + self.lamda_kd_logits * loss_kd_logits
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -221,7 +255,7 @@ class CLIF(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                epochs,
+                self.epochs,
                 losses / len(train_loader),
                 train_map,
                 test_map,
@@ -240,7 +274,7 @@ class CLIF(BaseLearner):
         feature_new = feature_new-torch.mean(feature_new,dim=0)
         RSM_old = torch.nn.functional.cosine_similarity(feature_old.unsqueeze(1), feature_old.unsqueeze(0), dim=-1)
         RSM_new = torch.nn.functional.cosine_similarity(feature_new.unsqueeze(1), feature_new.unsqueeze(0), dim=-1)
-        if self.subject == 'visual':
+        if self.subject == 'visual' or str(self.dataset).upper() == "EMOTIC":
             loss = (RSM_old - torch.diag_embed(torch.diag(RSM_old))) - (RSM_new - torch.diag_embed(torch.diag(RSM_new)))
         else:
             loss = torch.atanh(RSM_old-torch.diag_embed(torch.diag(RSM_old)))-torch.atanh(RSM_new-torch.diag_embed(torch.diag(RSM_new)))

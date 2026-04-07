@@ -7,19 +7,29 @@ from tqdm import tqdm
 import torch
 
 class DataManager(object):
-    def __init__(self, dataset_name,init_cls, increment,data_all):
+    def __init__(self, dataset_name, init_cls, increment, data_all, total_class=None):
         self.dataset_name = dataset_name
+        self.total_class = total_class or self._infer_total_class(dataset_name)
         self._increments = [init_cls]
-        if self.dataset_name == 'iScience':
-            while sum(self._increments) + increment <= 27:
-                self._increments.append(increment)
-        elif self.dataset_name == 'Neuroimage':
-            while sum(self._increments) + increment <= 80:
-                self._increments.append(increment)
-        elif self.dataset_name == 'PNAS':
-            while sum(self._increments) + increment <= 28:
-                self._increments.append(increment)
+        while sum(self._increments) + increment <= self.total_class:
+            self._increments.append(increment)
+        remainder = self.total_class - sum(self._increments)
+        if remainder > 0:
+            self._increments.append(remainder)
         self.data_all = data_all
+
+    @staticmethod
+    def _infer_total_class(dataset_name):
+        mapping = {
+            "iScience": 27,
+            "Neuroimage": 80,
+            "PNAS": 28,
+            "EMOTIC": 26,
+        }
+        try:
+            return mapping[dataset_name]
+        except KeyError as exc:
+            raise ValueError("Unknown total class count for dataset {}.".format(dataset_name)) from exc
     @property
     def nb_tasks(self):
         return len(self._increments)
@@ -31,10 +41,7 @@ class DataManager(object):
         return sum(self._increments[:task + 1])
 
     def get_total_classnum(self):
-        if self.dataset_name == 'iScience':
-            return 27
-        elif self.dataset_name == 'Neuroimage':
-            return 80
+        return self.total_class
 
     def get_dataset(self, task_now, source,appendent=None,ret_data=False,affective=False):
         sub_data,label,affective_dimension = self.data_all

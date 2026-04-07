@@ -1,6 +1,6 @@
 def _is_multi_label_dataset(args):
     dataset = args.get("dataset", "").lower()
-    return dataset in {"iscience", "pnas", "neuroimage"}
+    return dataset in {"iscience", "pnas", "neuroimage", "emotic"}
 
 
 def get_model(model_name, args):

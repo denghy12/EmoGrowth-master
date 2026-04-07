@@ -112,11 +112,21 @@ class BaseNet_CLIF(nn.Module):
         self.clifnet = get_clifnet(args)
         self.fc = None
         self.feature_dim = args['feature_dim']
+        self.register_buffer("runtime_label_adj", torch.empty(0))
 
     def extract_vector(self, x):
         return self.mlpnet(x)["features"]
 
+    def set_runtime_label_adj(self, label_adj):
+        self.runtime_label_adj = label_adj
+
+    def _resolve_label_adj(self, label_adj):
+        if self.runtime_label_adj.numel() > 0:
+            return self.runtime_label_adj
+        return label_adj
+
     def forward(self, x,label_adj):
+        label_adj = self._resolve_label_adj(label_adj)
         output = self.clifnet(x,label_adj)
         logits = self.fc(output["dis_features"]).squeeze(2)
         label_embedding = output['label_embedding']
@@ -170,6 +180,7 @@ class IncrementalNet_CLIF(BaseNet_CLIF):
         return fc
 
     def forward(self,x,label_adj,kd=False):
+        label_adj = self._resolve_label_adj(label_adj)
         output = self.clifnet(x,label_adj)
         logits = self.fc(output["dis_features"]).squeeze(2)
         label_embedding = output['label_embedding']
@@ -186,9 +197,18 @@ class BaseNet_AGCN(nn.Module):
         self.agcnnet = get_agcnnet(args)
         self.fc = None
         self.feature_dim = args['feature_dim']
+        self.register_buffer("runtime_label_adj", torch.empty(0))
 
     def extract_vector(self, x):
         return self.mlpnet(x)["features"]
+
+    def set_runtime_label_adj(self, label_adj):
+        self.runtime_label_adj = label_adj
+
+    def _resolve_label_adj(self, label_adj):
+        if self.runtime_label_adj.numel() > 0:
+            return self.runtime_label_adj
+        return label_adj
 
     def forward(self, x,label_adj):
         pass
@@ -241,6 +261,7 @@ class IncrementalNet_AGCN(BaseNet_AGCN):
         return fc
 
     def forward(self,x,label_adj):
+        label_adj = self._resolve_label_adj(label_adj)
         x = self.agcnnet(x)['features']
         ya = self.fc(x)
         label_embedding = x.unsqueeze(2).repeat(1, 1, label_adj.shape[0]).permute(0, 2, 1)

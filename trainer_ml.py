@@ -198,6 +198,26 @@ def data_prepare(args):
             dimension_label = np.transpose(dimension_file["affective_rating"]).astype(
                 "float32"
             )
+    elif dataset == "EMOTIC":
+        feature_path = args.get(
+            "feature_path", os.path.join(data_root, "feature_resnet18_bbox.npy")
+        )
+        sub_data = np.load(feature_path).astype("float32")
+        args["input_size"] = sub_data.shape[1]
+
+        label_session_path = args.get(
+            "label_session_path",
+            os.path.join(
+                data_root,
+                _get_label_session_name(dataset, args["init_cls"], args["increment"]),
+            ),
+        )
+        label = h5py.File(label_session_path, "r")
+
+        dimension_path = args.get(
+            "dimension_path", os.path.join(data_root, "affective_dimension.npy")
+        )
+        dimension_label = np.load(dimension_path).astype("float32")
     else:
         raise ValueError(f"Unsupported multi-label dataset: {dataset}")
 
@@ -223,6 +243,8 @@ def _get_label_session_name(dataset, init_cls, increment):
     try:
         return mapping[dataset][(init_cls, increment)]
     except KeyError as exc:
+        if dataset == "EMOTIC":
+            return f"label_session_b{init_cls}i{increment}.mat"
         raise ValueError(
             f"Unsupported label-session split for {dataset}: init_cls={init_cls}, increment={increment}"
         ) from exc
@@ -260,7 +282,11 @@ def _train(args):
     print_args(args)
 
     data_manager = DataManager(
-        args["dataset"], args["init_cls"], args["increment"], data_all
+        args["dataset"],
+        args["init_cls"],
+        args["increment"],
+        data_all,
+        total_class=args.get("total_class"),
     )
     model = factory.get_model(args["model_name"], args)
 
@@ -380,9 +406,7 @@ def _get_results_dir(args):
     elif init_cls == 16 and increment in {2, 3}:
         split_name = f"B16I{increment}"
     else:
-        raise ValueError(
-            f"Unsupported result split: init_cls={init_cls}, increment={increment}"
-        )
+        split_name = f"B{init_cls}I{increment}"
 
     return os.path.join(results_root, args["subject"], split_name)
 

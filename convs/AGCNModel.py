@@ -14,29 +14,31 @@ class gcn(torch.nn.Module):
         torch.nn.init.zeros_(self.bias)
 
     def norm(self, H, add=False):
+        eye = torch.eye(H.shape[0], device=H.device, dtype=H.dtype)
         if add == False:
-            H = H * ((torch.eye(H.shape[0]) == 0).type(torch.FloatTensor).cuda())
+            H = H * (1 - eye)
         else:
-            H = H * ((torch.eye(H.shape[0]) == 0).type(torch.FloatTensor).cuda()) + torch.eye(H.shape[0]).type(
-                torch.FloatTensor).cuda()
+            H = H * (1 - eye) + eye
         deg = torch.sum(H, dim=1)
         deg[deg<0] = 0
         deg_inv = deg.pow(-0.5)
         deg_inv[deg_inv == float('inf')] = 0
-        deg_inv = deg_inv * torch.eye(H.shape[0]).type(torch.FloatTensor).cuda()
+        deg_inv = deg_inv * eye
         H = torch.mm(deg_inv, H)
         H = torch.mm(H, deg_inv)
         return H
     def forward(self, X_b, H):
         batch_size = X_b.shape[0]
-        output = torch.tensor([]).cuda()
+        outputs = []
         for i in range(batch_size):
             X = X_b[i,:,:].squeeze(0)
             X = self.linear(X)
             H = self.norm(H, add=True)
             Out = torch.mm(H, X).view(-1).unsqueeze(0)
-            output = torch.cat((output, Out), dim=0)
-        return output
+            outputs.append(Out)
+        if outputs:
+            return torch.cat(outputs, dim=0)
+        return X_b.new_zeros((0, H.shape[0]))
 class AGCNNet(torch.nn.Module):
     def __init__(self,args):
         super(AGCNNet, self).__init__()

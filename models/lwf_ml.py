@@ -40,6 +40,15 @@ class LwF(BaseLearner):
     def __init__(self, args):
         super().__init__(args)
         self._network = IncrementalNet(args)
+        self.init_epoch = args.get("init_epochs", init_epoch)
+        self.epochs = args.get("epochs", epochs)
+        self.init_lr = args.get("init_lr", init_lr)
+        self.lrate = args.get("lrate", lrate)
+        self.init_weight_decay = args.get("init_weight_decay", init_weight_decay)
+        self.weight_decay = args.get("weight_decay", weight_decay)
+        self.batch_size = args.get("batch_size", batch_size)
+        self.num_workers = args.get("num_workers", num_workers)
+        self.lamda = args.get("lamda", lamda)
 
     def after_task(self):
         self._old_network = self._network.copy().freeze()
@@ -61,13 +70,19 @@ class LwF(BaseLearner):
         )
 
         self.train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=self.num_workers,
         )
         test_dataset = data_manager.get_dataset(
             self._cur_task, source="test"
         )
         self.test_loader = DataLoader(
-            test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
+            test_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=self.num_workers,
         )
 
         if len(self._multiple_gpus) > 1:
@@ -84,20 +99,20 @@ class LwF(BaseLearner):
         if self._cur_task == 0:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=init_lr,
-                weight_decay=init_weight_decay,
+                lr=self.init_lr,
+                weight_decay=self.init_weight_decay,
             )
             self._init_train(train_loader, test_loader, optimizer)
         else:
             optimizer = optim.Adam(
                 self._network.parameters(),
-                lr=lrate,
-                weight_decay=weight_decay,
+                lr=self.lrate,
+                weight_decay=self.weight_decay,
             )
             self._update_representation(train_loader, test_loader, optimizer)
 
     def _init_train(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(init_epoch))
+        prog_bar = tqdm(range(self.init_epoch))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -117,7 +132,7 @@ class LwF(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                init_epoch,
+                self.init_epoch,
                 losses / len(train_loader),
                 train_map,
                 test_map,
@@ -129,7 +144,7 @@ class LwF(BaseLearner):
         logging.info(info)
 
     def _update_representation(self, train_loader, test_loader, optimizer):
-        prog_bar = tqdm(range(epochs))
+        prog_bar = tqdm(range(self.epochs))
         cost = torch.nn.MultiLabelSoftMarginLoss()
         trans = torch.nn.Sigmoid()
         for _, epoch in enumerate(prog_bar):
@@ -145,7 +160,7 @@ class LwF(BaseLearner):
                     logits[:, self._known_classes :], fake_targets
                 )
                 loss_kd = cost(logits[:, : self._known_classes],trans(self._old_network(inputs)["logits"]))
-                loss = lamda * loss_kd + loss_clf
+                loss = self.lamda * loss_kd + loss_clf
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -155,7 +170,7 @@ class LwF(BaseLearner):
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(
                 self._cur_task,
                 epoch + 1,
-                epochs,
+                self.epochs,
                 losses / len(train_loader),
                 train_map,
                 test_map,

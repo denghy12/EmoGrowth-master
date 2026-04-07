@@ -170,6 +170,8 @@ class BaseLearner(object):
         model.eval()
         output = []
         label = []
+        if clif or agcn:
+            self._set_runtime_label_adj(model, self.label_adj.to(self._device))
         if clif == True:
             if update == False:
                 for i, (inputs, targets) in enumerate(loader):
@@ -224,6 +226,11 @@ class BaseLearner(object):
         _, map = average_precision(torch.from_numpy(output), torch.from_numpy(label))
         other_metrics = all_metrics(output,label)
         return map,other_metrics
+
+    def _set_runtime_label_adj(self, model, label_adj):
+        module = model.module if isinstance(model, nn.DataParallel) else model
+        if hasattr(module, "set_runtime_label_adj"):
+            module.set_runtime_label_adj(label_adj)
 
     def _eval_cnn(self, loader):
         self._network.eval()
