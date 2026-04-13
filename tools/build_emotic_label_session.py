@@ -1,4 +1,5 @@
 import argparse
+import shutil
 import json
 import os
 
@@ -9,6 +10,8 @@ import pandas as pd
 
 METADATA_FILENAME = "metadata.csv"
 CLASS_FILENAME = "class_order.json"
+DIMENSION_FILENAME = "affective_dimension.npy"
+MANIFEST_FILENAME = "label_session_manifest.json"
 
 
 def parse_args():
@@ -21,6 +24,12 @@ def parse_args():
         required=True,
         help="Directory that contains metadata.csv and class_order.json.",
     )
+    parser.add_argument(
+        "--output-root",
+        type=str,
+        default=None,
+        help="Optional output directory. Defaults to data-root.",
+    )
     parser.add_argument("--init-cls", type=int, required=True)
     parser.add_argument("--increment", type=int, required=True)
     parser.add_argument(
@@ -28,6 +37,13 @@ def parse_args():
         type=str,
         default="val,test",
         help="Comma-separated evaluation splits.",
+    )
+    parser.add_argument(
+        "--class-order-mode",
+        type=str,
+        default="existing",
+        choices=["existing", "alphabetical"],
+        help="How to derive the class order used by the generated label_session.",
     )
     return parser.parse_args()
 
@@ -59,6 +75,28 @@ def build_labels(metadata, class_order):
             labels[sample_idx, class_to_idx[category]] = 1.0
 
     return labels
+
+
+def resolve_class_order(data_root, mode):
+    class_order = json.load(open(os.path.join(data_root, CLASS_FILENAME)))
+    if mode == "alphabetical":
+        return sorted(class_order)
+    return class_order
+
+
+def build_task_groups(class_order, init_cls, increment):
+    task_sizes_cfg = build_task_sizes(len(class_order), init_cls, increment)
+    groups = []
+    offset = 0
+    for task_id, task_size in enumerate(task_sizes_cfg):
+        groups.append(
+            {
+                "task_id": task_id,
+                "classes": class_order[offset : offset + task_size],
+            }
+        )
+        offset += task_size
+    return groups
 
 
 def create_label_session(labels, split_names, eval_splits, class_order, init_cls, increment, output_path):
@@ -114,16 +152,35 @@ def create_label_session(labels, split_names, eval_splits, class_order, init_cls
         h5_file.create_dataset("label_session", data=refs)
 
 
+def copy_if_exists(source_path, target_path):
+    if os.path.exists(source_path):
+        shutil.copy2(source_path, target_path)
+
+
 def main():
     args = parse_args()
     data_root = os.path.abspath(args.data_root)
-    class_order = json.load(open(os.path.join(data_root, CLASS_FILENAME)))
+    output_root = os.path.abspath(args.output_root or data_root)
+    os.makedirs(output_root, exist_ok=True)
+
+    class_order = resolve_class_order(data_root, args.class_order_mode)
     metadata = load_metadata(data_root)
     labels = build_labels(metadata, class_order)
     split_names = metadata["split"].to_numpy()
     eval_splits = [split.strip() for split in args.eval_splits.split(",") if split.strip()]
     output_name = f"label_session_b{args.init_cls}i{args.increment}.mat"
-    output_path = os.path.join(data_root, output_name)
+    output_path = os.path.join(output_root, output_name)
+
+    metadata_path = os.path.join(data_root, METADATA_FILENAME)
+    if os.path.abspath(metadata_path) != os.path.join(output_root, METADATA_FILENAME):
+        shutil.copy2(metadata_path, os.path.join(output_root, METADATA_FILENAME))
+    copy_if_exists(
+        os.path.join(data_root, DIMENSION_FILENAME),
+        os.path.join(output_root, DIMENSION_FILENAME),
+    )
+
+    with open(os.path.join(output_root, CLASS_FILENAME), "w") as class_file:
+        json.dump(class_order, class_file, indent=2)
 
     create_label_session(
         labels=labels,
@@ -135,7 +192,19 @@ def main():
         output_path=output_path,
     )
 
-    print(output_path)
+    manifest = {
+        "source_root": data_root,
+        "output_root": output_root,
+        "class_order_mode": args.class_order_mode,
+        "init_cls": args.init_cls,
+        "increment": args.increment,
+        "eval_splits": eval_splits,
+        "task_groups": build_task_groups(class_order, args.init_cls, args.increment),
+    }
+    with open(os.path.join(output_root, MANIFEST_FILENAME), "w") as manifest_file:
+        json.dump(manifest, manifest_file, indent=2)
+
+    print(json.dumps(manifest, indent=2))
 
 
 if __name__ == "__main__":

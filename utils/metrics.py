@@ -141,14 +141,14 @@ def OneError(outputs, true_labels):
     return float(FMT % oe)
 
 def HammingLoss(outputs, true_labels):
-    pre_labels = np.array(outputs > 0, dtype=np.int)
+    pre_labels = np.array(outputs > 0, dtype=int)
     m, q = true_labels.shape
     miss_label = np.sum((pre_labels == true_labels) == False)
     hl = miss_label / (m * q)
     return float(FMT % hl)
 
 def MacroF1(outputs, true_labels):
-    pre_labels = np.array(outputs > 0, dtype=np.int)
+    pre_labels = np.array(outputs > 0, dtype=int)
     true_labels = true_labels.astype(int)
     m, q = true_labels.shape
     maf = 0
@@ -165,7 +165,7 @@ def MacroF1(outputs, true_labels):
 
 
 def MicroF1(outputs, true_labels):
-    pre_labels = np.array(outputs > 0, dtype=np.int)
+    pre_labels = np.array(outputs > 0, dtype=int)
     true_labels = true_labels.astype(int)
     tp = np.sum(((pre_labels) & (true_labels)) == True)
     fp = np.sum((pre_labels & (1 - true_labels)) == True)

@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from torchvision.models import resnet18
+from torchvision.models import resnet18, vit_b_16
 from tqdm import tqdm
 
 try:
@@ -20,8 +20,13 @@ try:
 except ImportError:
     ResNet18_Weights = None
 
+try:
+    from torchvision.models import ViT_B_16_Weights
+except ImportError:
+    ViT_B_16_Weights = None
 
-FEATURE_FILENAME = "feature_resnet18_bbox.npy"
+
+DEFAULT_EXTRACTOR = "resnet18"
 DIMENSION_FILENAME = "affective_dimension.npy"
 METADATA_FILENAME = "metadata.csv"
 CLASS_FILENAME = "class_order.json"
@@ -76,6 +81,19 @@ def parse_args():
         "--overwrite",
         action="store_true",
         help="Rebuild features even if output files already exist.",
+    )
+    parser.add_argument(
+        "--extractor",
+        type=str,
+        default=DEFAULT_EXTRACTOR,
+        choices=["resnet18", "vit_b_16"],
+        help="Vision backbone used for offline EMOTIC feature extraction.",
+    )
+    parser.add_argument(
+        "--feature-filename",
+        type=str,
+        default=None,
+        help="Optional override for the generated feature filename.",
     )
     return parser.parse_args()
 
@@ -243,47 +261,73 @@ def crop_person(image, bbox, expand_ratio):
     return image.crop(crop_box)
 
 
-def create_extractor():
-    if ResNet18_Weights is not None:
-        weights = ResNet18_Weights.IMAGENET1K_V1
+def get_feature_filename(extractor_name, custom_filename=None):
+    if custom_filename:
+        return custom_filename
+    return "feature_{}_bbox.npy".format(extractor_name.lower())
+
+
+def _imagenet_fallback_transform():
+    return transforms.Compose(
+        [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),
+        ]
+    )
+
+
+def create_extractor(extractor_name):
+    extractor_name = extractor_name.lower()
+    if extractor_name == "resnet18":
+        if ResNet18_Weights is not None:
+            weights = ResNet18_Weights.IMAGENET1K_V1
+            try:
+                model = resnet18(weights=weights)
+                transform = weights.transforms()
+            except Exception:
+                model = resnet18(weights=None)
+                transform = _imagenet_fallback_transform()
+        else:
+            model = resnet18(pretrained=True)
+            transform = _imagenet_fallback_transform()
+        model.fc = torch.nn.Identity()
+    elif extractor_name == "vit_b_16":
+        if ViT_B_16_Weights is None:
+            raise RuntimeError(
+                "torchvision in this environment does not provide ViT_B_16_Weights."
+            )
+        weights = ViT_B_16_Weights.IMAGENET1K_V1
         try:
-            model = resnet18(weights=weights)
+            model = vit_b_16(weights=weights)
             transform = weights.transforms()
         except Exception:
-            model = resnet18(weights=None)
-            transform = transforms.Compose(
-                [
-                    transforms.Resize(256),
-                    transforms.CenterCrop(224),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                    ),
-                ]
-            )
+            model = vit_b_16(weights=None)
+            transform = _imagenet_fallback_transform()
+        model.heads = torch.nn.Identity()
     else:
-        model = resnet18(pretrained=True)
-        transform = transforms.Compose(
-            [
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),
-            ]
-        )
+        raise ValueError("Unsupported extractor: {}".format(extractor_name))
 
-    model.fc = torch.nn.Identity()
     model.eval()
     return model, transform
 
 
-def extract_features(records, output_path, batch_size, num_workers, device_name, bbox_expand_ratio):
+def extract_features(
+    records,
+    output_path,
+    batch_size,
+    num_workers,
+    device_name,
+    bbox_expand_ratio,
+    extractor_name,
+):
     if os.path.exists(output_path):
         return np.load(output_path).astype(np.float32)
 
-    model, transform = create_extractor()
+    model, transform = create_extractor(extractor_name)
     device = torch.device(device_name if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
@@ -441,7 +485,9 @@ def main():
     )
     labels, dimensions = build_multi_hot(records, class_order)
 
-    feature_path = os.path.join(output_root, FEATURE_FILENAME)
+    feature_path = os.path.join(
+        output_root, get_feature_filename(args.extractor, args.feature_filename)
+    )
     if args.overwrite and os.path.exists(feature_path):
         os.remove(feature_path)
 
@@ -452,6 +498,7 @@ def main():
         num_workers=args.num_workers,
         device_name=args.device,
         bbox_expand_ratio=args.bbox_expand_ratio,
+        extractor_name=args.extractor,
     )
     np.save(os.path.join(output_root, DIMENSION_FILENAME), dimensions.astype(np.float32))
 
@@ -479,6 +526,8 @@ def main():
         "num_samples": int(len(records)),
         "num_classes": int(len(class_order)),
         "task_sizes": build_task_sizes(len(class_order), args.init_cls, args.increment),
+        "extractor": args.extractor,
+        "feature_path": feature_path,
         "feature_shape": list(features.shape),
         "eval_splits": eval_splits,
         "class_frequency": dict(category_counter),

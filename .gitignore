@@ -4,6 +4,7 @@ __pycache__/
 
 logs/
 results/
+results_*/
 data/
 
 .pytest_cache/
