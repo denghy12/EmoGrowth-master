@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 
-FEATURE_FILENAME = "feature_resnet18_bbox.npy"
+DEFAULT_FEATURE_FILENAME = "feature_vit_b_16_bbox.npy"
 DIMENSION_FILENAME = "affective_dimension.npy"
 METADATA_FILENAME = "metadata.csv"
 CLASS_FILENAME = "class_order.json"
@@ -39,6 +39,12 @@ def parse_args():
         type=str,
         default="val,test",
         help="Comma-separated evaluation splits.",
+    )
+    parser.add_argument(
+        "--feature-filename",
+        type=str,
+        default=DEFAULT_FEATURE_FILENAME,
+        help="Feature file to link into the balanced split directory.",
     )
     return parser.parse_args()
 
@@ -272,7 +278,7 @@ def main():
     with open(os.path.join(output_root, CLASS_FILENAME), "w") as class_file:
         json.dump(class_order, class_file, indent=2)
 
-    for filename in [FEATURE_FILENAME, DIMENSION_FILENAME, METADATA_FILENAME, "CVPR17_Annotations.mat"]:
+    for filename in [args.feature_filename, DIMENSION_FILENAME, METADATA_FILENAME, "CVPR17_Annotations.mat"]:
         source_path = os.path.join(source_root, filename)
         if os.path.exists(source_path):
             ensure_link_or_copy(source_path, os.path.join(output_root, filename))
@@ -288,6 +294,7 @@ def main():
         "num_classes": int(len(class_order)),
         "task_sizes": task_sizes_cfg,
         "eval_splits": eval_splits,
+        "feature_filename": args.feature_filename,
         "task_train_samples_balanced": balanced_train_sizes,
         "task_stats": compute_task_stats(
             labels=labels,

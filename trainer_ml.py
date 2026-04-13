@@ -41,6 +41,10 @@ DEFAULT_LAMBDA_LE_LIST = [
 ]
 DEFAULT_LAMBDA_KD_RELATION_DATA_LIST = [1]
 DEFAULT_LAMBDA_KD_RELATION_AFF_LIST = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+EMOTIC_FEATURE_SPECS = {
+    "feature_vit_b_16_bbox.npy": ("vit_b_16", 768),
+    "feature_resnet18_bbox.npy": ("resnet18", 512),
+}
 
 
 def finished(records, lamda_le, lamda_kd_relation_aff, lamda_kd_relation_data):
@@ -127,6 +131,75 @@ def _train_clif_sweep(args, seed_list, device_cfg):
                     pd.DataFrame(data=records).to_csv(sensitivity_path, index=False)
 
 
+def _infer_emotic_backbone(feature_path):
+    basename = os.path.basename(feature_path)
+    spec = EMOTIC_FEATURE_SPECS.get(basename)
+    if spec is not None:
+        return spec
+
+    lowered = basename.lower()
+    if "vit" in lowered:
+        return "vit_b_16", 768
+    if "resnet18" in lowered:
+        return "resnet18", 512
+    return None, None
+
+
+def _validate_emotic_backbone_config(args, feature_path, feature_dim):
+    inferred_backbone, expected_input_size = _infer_emotic_backbone(feature_path)
+    basename = os.path.basename(feature_path)
+    subject = str(args.get("subject", ""))
+    subject_lower = subject.lower()
+    configured_input_size = args.get("input_size")
+    errors = []
+
+    if inferred_backbone == "vit_b_16" and "vit" not in subject_lower:
+        errors.append(
+            "subject '{}' must include 'vit' when feature_path points to '{}'.".format(
+                subject, basename
+            )
+        )
+    elif inferred_backbone == "resnet18" and "resnet18" not in subject_lower:
+        errors.append(
+            "subject '{}' must include 'resnet18' when feature_path points to '{}'.".format(
+                subject, basename
+            )
+        )
+
+    if "vit" in subject_lower and inferred_backbone not in {None, "vit_b_16"}:
+        errors.append(
+            "subject '{}' implies ViT features, but feature_path points to '{}'.".format(
+                subject, basename
+            )
+        )
+    if "resnet18" in subject_lower and inferred_backbone not in {None, "resnet18"}:
+        errors.append(
+            "subject '{}' implies ResNet18 features, but feature_path points to '{}'.".format(
+                subject, basename
+            )
+        )
+
+    if expected_input_size is not None and configured_input_size is not None:
+        if configured_input_size != expected_input_size:
+            errors.append(
+                "configured input_size={} does not match expected input_size={} for '{}'.".format(
+                    configured_input_size, expected_input_size, basename
+                )
+            )
+
+    if expected_input_size is not None and feature_dim != expected_input_size:
+        errors.append(
+            "loaded feature dimension {} does not match expected input_size {} for '{}'.".format(
+                feature_dim, expected_input_size, basename
+            )
+        )
+
+    if errors:
+        raise ValueError(
+            "Invalid EMOTIC backbone configuration:\n- {}".format("\n- ".join(errors))
+        )
+
+
 def data_prepare(args):
     dataset = args["dataset"]
     data_root = args.get("data_root", "/nfs/diskstation/DataStation/KaichengFu/CIL_data")
@@ -200,9 +273,10 @@ def data_prepare(args):
             )
     elif dataset == "EMOTIC":
         feature_path = args.get(
-            "feature_path", os.path.join(data_root, "feature_resnet18_bbox.npy")
+            "feature_path", os.path.join(data_root, "feature_vit_b_16_bbox.npy")
         )
         sub_data = np.load(feature_path).astype("float32")
+        _validate_emotic_backbone_config(args, feature_path, sub_data.shape[1])
         args["input_size"] = sub_data.shape[1]
 
         label_session_path = args.get(
@@ -252,11 +326,12 @@ def _get_label_session_name(dataset, init_cls, increment):
 
 def _train(args):
     init_cls = 0 if args["init_cls"] == args["increment"] else args["init_cls"]
-    logs_name = f"logs/{args['model_name']}/{args['dataset']}/{init_cls}/{args['increment']}"
+    subject_name = str(args.get("subject", "default")).replace("/", "_")
+    logs_name = f"logs/{args['model_name']}/{args['dataset']}/{subject_name}/{init_cls}/{args['increment']}"
     os.makedirs(logs_name, exist_ok=True)
 
     time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
-    run_name = f"{args['prefix']}_{args['seed']}_{args['convnet_type']}_{time_str}"
+    run_name = f"{args['prefix']}_{args['seed']}_{subject_name}_{args['convnet_type']}_{time_str}"
     csv_name = run_name
     logfilename = f"{logs_name}/{run_name}"
     args["time_str"] = time_str

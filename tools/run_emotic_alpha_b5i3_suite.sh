@@ -14,17 +14,12 @@ if [[ -n "${WAIT_FOR_RESULT}" ]]; then
 fi
 
 CONFIGS=(
+  "./exps/emotic_finetune_formal_vit_b16_alpha_b5i3.json"
   "./exps/emotic_lwf_formal_vit_b16_alpha_b5i3.json"
   "./exps/emotic_ewc_formal_vit_b16_alpha_b5i3.json"
   "./exps/emotic_replay_formal_vit_b16_alpha_b5i3.json"
   "./exps/emotic_agcn_formal_vit_b16_alpha_b5i3.json"
   "./exps/emotic_clif_formal_vit_b16_alpha_b5i3.json"
-  "./exps/emotic_finetune_formal_resnet18_alpha_b5i3.json"
-  "./exps/emotic_lwf_formal_resnet18_alpha_b5i3.json"
-  "./exps/emotic_ewc_formal_resnet18_alpha_b5i3.json"
-  "./exps/emotic_replay_formal_resnet18_alpha_b5i3.json"
-  "./exps/emotic_agcn_formal_resnet18_alpha_b5i3.json"
-  "./exps/emotic_clif_formal_resnet18_alpha_b5i3.json"
 )
 
 for config in "${CONFIGS[@]}"; do

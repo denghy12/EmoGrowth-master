@@ -26,7 +26,7 @@ except ImportError:
     ViT_B_16_Weights = None
 
 
-DEFAULT_EXTRACTOR = "resnet18"
+DEFAULT_EXTRACTOR = "vit_b_16"
 DIMENSION_FILENAME = "affective_dimension.npy"
 METADATA_FILENAME = "metadata.csv"
 CLASS_FILENAME = "class_order.json"
