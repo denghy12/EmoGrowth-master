@@ -45,18 +45,26 @@ def main():
     parser = argparse.ArgumentParser(description="Summarize EMOTIC alpha B5-I3 experiment results.")
     parser.add_argument("--results-root", default="./results_formal_alpha")
     parser.add_argument("--split", default="B5I3")
+    parser.add_argument(
+        "--include-resnet",
+        action="store_true",
+        help="Include ResNet18 comparison runs in the summary output.",
+    )
     args = parser.parse_args()
 
-    subjects = {
-        "vit_b_16": f"bbox_vit_b_16_alpha_b5i3/{args.split}",
-        "resnet18": f"bbox_resnet18_alpha_b5i3/{args.split}",
-    }
+    subjects = [
+        ("vit_b_16", f"bbox_vit_b_16_alpha_b5i3/{args.split}"),
+    ]
+    if args.include_resnet:
+        subjects.append(
+            ("resnet18_compare", f"bbox_resnet18_compare_alpha_b5i3/{args.split}")
+        )
     methods = ["finetune", "lwf", "ewc", "replay", "agcn", "clif"]
 
     writer = csv.writer(os.sys.stdout)
     writer.writerow(["backbone", "method", *METRICS, "result_file"])
 
-    for backbone, relative_dir in subjects.items():
+    for backbone, relative_dir in subjects:
         result_dir = os.path.join(args.results_root, relative_dir)
         for method in methods:
             result_file = resolve_result_file(result_dir, method)

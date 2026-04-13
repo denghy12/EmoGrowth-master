@@ -1,7 +1,7 @@
 {
-    "prefix": "emotic_agcn_formal_resnet18_alpha_b5i3",
+    "prefix": "emotic_replay_formal_resnet18_compare_alpha_b5i3",
     "dataset": "EMOTIC",
-    "subject": "bbox_resnet18_alpha_b5i3",
+    "subject": "bbox_resnet18_compare_alpha_b5i3",
     "data_root": "./data/emotic_processed_alpha_b5i3",
     "feature_path": "./data/emotic_processed/feature_resnet18_bbox.npy",
     "results_root": "./results_formal_alpha",
@@ -11,8 +11,9 @@
     "shuffle": true,
     "init_cls": 5,
     "increment": 3,
-    "model_name": "agcn",
-    "convnet_type": "agcn",
+    "model_name": "replay",
+    "convnet_type": "mlp",
+    "buffer_type": "prs",
     "device": ["0", "1"],
     "seed": [1993],
     "input_size": 512,
@@ -20,12 +21,11 @@
     "total_class": 26,
     "batch_size": 128,
     "num_workers": 8,
-    "init_epochs": 20,
-    "epochs": 10,
+    "init_epochs": 30,
+    "epochs": 40,
     "init_lr": 0.0001,
     "lrate": 0.0001,
     "init_weight_decay": 0.01,
-    "weight_decay": 0.01,
-    "save_results": true,
-    "lamda_kd_logits": 1
+    "weight_decay": 0.001,
+    "save_results": true
 }

@@ -58,6 +58,52 @@ python main_ml.py --config=./exps/multi_label.json
 
 `trainer_ml.py` now defaults to a single formal training run. If you want the previous CLIF sensitivity sweep behaviour, set `sweep_hparams` to `true` in `exps/multi_label.json`.
 
+#### EMOTIC ViT Baseline
+
+EMOTIC development now treats offline `ViT-B/16` features as the default baseline.
+`ResNet18` remains available for explicit comparison experiments, but it is no longer
+the default EMOTIC feature extractor or the default training path.
+
+Prepare EMOTIC features and label sessions:
+
+```bash
+python tools/prepare_emotic.py \
+  --output-root ./data/emotic_processed \
+  --extractor vit_b_16
+```
+
+The command above generates `feature_vit_b_16_bbox.npy`,
+`affective_dimension.npy`, `metadata.csv`, `class_order.json`, and the matching
+`label_session_b*i*.mat`.
+
+Run the default EMOTIC formal suites:
+
+```bash
+bash tools/run_emotic_formal_suite.sh
+bash tools/run_emotic_balanced_suite.sh
+```
+
+Run the default EMOTIC B5I3 suites:
+
+```bash
+bash tools/run_emotic_b5i3_original_suite.sh
+bash tools/run_emotic_b5i3_balanced_suite.sh
+bash tools/run_emotic_alpha_b5i3_suite.sh
+```
+
+Run the explicit backbone comparison suite:
+
+```bash
+bash tools/run_emotic_alpha_b5i3_compare_suite.sh
+```
+
+Current conventions:
+
+- Default EMOTIC configs and scripts target `ViT-B/16` features.
+- Default EMOTIC feature files use `feature_vit_b_16_bbox.npy`.
+- `ResNet18` configs are comparison or legacy paths and must be named explicitly.
+- `ResNet18` comparison configs live under `exps/compare/`.
+
 ### Hyper-parameters
 
 When using PyCIL, you can edit the global parameters and algorithm-specific hyper-parameter in the corresponding json file.
