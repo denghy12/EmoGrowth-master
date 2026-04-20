@@ -32,8 +32,14 @@ def resolve_result_file(result_dir, method):
         matches = sorted(glob.glob(os.path.join(result_dir, "clif_*.csv")))
         return matches[-1] if matches else None
     filename = METHOD_FILES[method]
-    path = os.path.join(result_dir, filename)
-    return path if os.path.exists(path) else None
+    direct_path = os.path.join(result_dir, filename)
+    if os.path.exists(direct_path):
+        return direct_path
+
+    stem, suffix = os.path.splitext(filename)
+    pattern = os.path.join(result_dir, f"{stem}_*{suffix}")
+    matches = sorted(glob.glob(pattern))
+    return matches[-1] if matches else None
 
 
 def load_summary(path):
@@ -43,8 +49,12 @@ def load_summary(path):
 
 def main():
     parser = argparse.ArgumentParser(description="Summarize EMOTIC alpha B5-I3 experiment results.")
-    parser.add_argument("--results-root", default="./results_formal_alpha")
+    parser.add_argument("--results-root", default="./result")
     parser.add_argument("--split", default="B5I3")
+    parser.add_argument("--order", default="alphabetical")
+    parser.add_argument("--protocol", default="original")
+    parser.add_argument("--loss-type", default="softmargin")
+    parser.add_argument("--scale", default="formal")
     parser.add_argument(
         "--include-resnet",
         action="store_true",
@@ -53,11 +63,11 @@ def main():
     args = parser.parse_args()
 
     subjects = [
-        ("vit_b_16", f"bbox_vit_b_16_alpha_b5i3/{args.split}"),
+        ("vit", os.path.join("vit", args.order, args.protocol, args.split, args.loss_type, args.scale)),
     ]
     if args.include_resnet:
         subjects.append(
-            ("resnet18_compare", f"bbox_resnet18_compare_alpha_b5i3/{args.split}")
+            ("resnet18", os.path.join("resnet18", args.order, args.protocol, args.split, args.loss_type, args.scale))
         )
     methods = ["finetune", "lwf", "ewc", "replay", "agcn", "clif"]
 

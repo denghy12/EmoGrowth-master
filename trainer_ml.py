@@ -327,7 +327,8 @@ def _get_label_session_name(dataset, init_cls, increment):
 def _train(args):
     init_cls = 0 if args["init_cls"] == args["increment"] else args["init_cls"]
     subject_name = str(args.get("subject", "default")).replace("/", "_")
-    logs_name = f"logs/{args['model_name']}/{args['dataset']}/{subject_name}/{init_cls}/{args['increment']}"
+    split_name = _get_split_name(args["init_cls"], args["increment"])
+    logs_name = _get_logs_dir(args, split_name)
     os.makedirs(logs_name, exist_ok=True)
 
     time_str = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -464,26 +465,118 @@ def _save_results(args, all_result):
 
 
 def _get_results_dir(args):
+    split_name = _get_split_name(args["init_cls"], args["increment"])
+
+    if args.get("dataset") == "EMOTIC":
+        return _get_emotic_results_dir(args, split_name)
+
     results_root = args.get("results_root", "./results")
-    init_cls = args["init_cls"]
-    increment = args["increment"]
-
-    if init_cls == 9:
-        split_name = "B9I9"
-    elif init_cls == 3:
-        split_name = "B3I3"
-    elif init_cls == 15:
-        split_name = f"B15I{increment}"
-    elif init_cls == 4:
-        split_name = "B4I4"
-    elif init_cls == 7:
-        split_name = "B7I7"
-    elif init_cls == 16 and increment in {2, 3}:
-        split_name = f"B16I{increment}"
-    else:
-        split_name = f"B{init_cls}I{increment}"
-
     return os.path.join(results_root, args["subject"], split_name)
+
+
+def _get_split_name(init_cls, increment):
+    if init_cls == 9:
+        return "B9I9"
+    if init_cls == 3:
+        return "B3I3"
+    if init_cls == 15:
+        return f"B15I{increment}"
+    if init_cls == 4:
+        return "B4I4"
+    if init_cls == 7:
+        return "B7I7"
+    if init_cls == 16 and increment in {2, 3}:
+        return f"B16I{increment}"
+    return f"B{init_cls}I{increment}"
+
+
+def _load_json_if_exists(path):
+    if os.path.exists(path):
+        with open(path) as handle:
+            return json.load(handle)
+    return None
+
+
+def _infer_emotic_order_and_protocol(args):
+    data_root = args.get("data_root", "")
+    root_name = os.path.basename(os.path.abspath(data_root)).lower()
+    manifest = _load_json_if_exists(os.path.join(data_root, "label_session_manifest.json"))
+    prepare_manifest = _load_json_if_exists(os.path.join(data_root, "prepare_manifest.json"))
+
+    if manifest is not None:
+        class_order_mode = manifest.get("class_order_mode", "existing")
+        train_assignment_mode = manifest.get("train_assignment_mode", "repeat_current")
+    else:
+        class_order_mode = None
+        train_assignment_mode = None
+
+    if "balanced" in root_name:
+        order_name = "balanced"
+    elif class_order_mode == "alphabetical" or "alpha" in root_name:
+        order_name = "alphabetical"
+    else:
+        order_name = "frequency"
+
+    if train_assignment_mode == "strict_owner" or "strict_owner" in root_name or "strict" in root_name:
+        protocol_name = "strict"
+    else:
+        protocol_name = "original"
+
+    return order_name, protocol_name, manifest or prepare_manifest or {}
+
+
+def _infer_emotic_scale(args):
+    joined = " ".join(
+        str(args.get(key, "")).lower()
+        for key in ["prefix", "subject", "results_root", "result_root"]
+    )
+    return "smoke" if "smoke" in joined else "formal"
+
+
+def _infer_emotic_loss_name(args):
+    return str(args.get("loss_type", "softmargin")).lower()
+
+
+def _get_emotic_results_dir(args, split_name):
+    feature_path = args.get("feature_path", "")
+    inferred_backbone, _ = _infer_emotic_backbone(feature_path)
+    extractor_name = "vit" if inferred_backbone == "vit_b_16" else "resnet18"
+    order_name, protocol_name, _ = _infer_emotic_order_and_protocol(args)
+    loss_name = _infer_emotic_loss_name(args)
+    scale_name = _infer_emotic_scale(args)
+    result_root = args.get("result_root", "./result")
+    return os.path.join(
+        result_root,
+        extractor_name,
+        order_name,
+        protocol_name,
+        split_name,
+        loss_name,
+        scale_name,
+    )
+
+
+def _get_logs_dir(args, split_name):
+    if args.get("dataset") == "EMOTIC":
+        feature_path = args.get("feature_path", "")
+        inferred_backbone, _ = _infer_emotic_backbone(feature_path)
+        extractor_name = "vit" if inferred_backbone == "vit_b_16" else "resnet18"
+        order_name, protocol_name, _ = _infer_emotic_order_and_protocol(args)
+        loss_name = _infer_emotic_loss_name(args)
+        scale_name = _infer_emotic_scale(args)
+        return os.path.join(
+            "logs",
+            extractor_name,
+            order_name,
+            protocol_name,
+            split_name,
+            loss_name,
+            scale_name,
+            args["model_name"],
+        )
+
+    subject_name = str(args.get("subject", "default")).replace("/", "_")
+    return os.path.join("logs", args["model_name"], args["dataset"], subject_name, str(args["init_cls"] if args["init_cls"] != args["increment"] else 0), str(args["increment"]))
 
 
 def _set_device(args):

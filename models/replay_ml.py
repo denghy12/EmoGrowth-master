@@ -65,11 +65,13 @@ class Replay(BaseLearner):
         )
 
         # Loader
-        train_dataset = data_manager.get_dataset(
+        train_x, train_y, train_dataset = data_manager.get_dataset(
             self._cur_task,
             source="train",
             appendent=self._get_memory_ml(),
+            ret_data=True,
         )
+        self.cls_criterion = self._build_multilabel_criterion(train_y, target_mode="seen")
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=self.batch_size,
@@ -122,7 +124,6 @@ class Replay(BaseLearner):
 
     def _init_train(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.init_epoch))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -130,7 +131,7 @@ class Replay(BaseLearner):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 logits = self._network(inputs)["logits"]
 
-                loss = cost(logits, targets)
+                loss = self.cls_criterion(logits, targets)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -154,7 +155,6 @@ class Replay(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -162,11 +162,8 @@ class Replay(BaseLearner):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 logits = self._network(inputs)["logits"]
 
-
-                fake_targets = targets
-                loss_clf = cost(
-                    logits, fake_targets
-                )
+                seen_targets = self._targets_to_seen(targets)
+                loss_clf = self.cls_criterion(logits, seen_targets)
 
                 loss = loss_clf
 

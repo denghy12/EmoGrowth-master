@@ -64,9 +64,13 @@ class LwF(BaseLearner):
             "Learning on {}-{}".format(self._known_classes, self._total_classes)
         )
 
-        train_dataset = data_manager.get_dataset(
+        train_x, train_y, train_dataset = data_manager.get_dataset(
             self._cur_task,
             source="train",
+            ret_data=True,
+        )
+        self.cls_criterion = self._build_multilabel_criterion(
+            train_y, target_mode="current"
         )
 
         self.train_loader = DataLoader(
@@ -113,7 +117,6 @@ class LwF(BaseLearner):
 
     def _init_train(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.init_epoch))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -121,7 +124,7 @@ class LwF(BaseLearner):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 logits = self._network(inputs)["logits"]
 
-                loss = cost(logits, targets)
+                loss = self.cls_criterion(logits, targets)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -145,7 +148,7 @@ class LwF(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
+        kd_cost = torch.nn.MultiLabelSoftMarginLoss()
         trans = torch.nn.Sigmoid()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -154,12 +157,14 @@ class LwF(BaseLearner):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 logits = self._network(inputs)["logits"]
 
-                # fake_targets = targets - self._known_classes
-                fake_targets = targets
-                loss_clf = cost(
+                fake_targets = self._targets_to_current_task(targets)
+                loss_clf = self.cls_criterion(
                     logits[:, self._known_classes :], fake_targets
                 )
-                loss_kd = cost(logits[:, : self._known_classes],trans(self._old_network(inputs)["logits"]))
+                loss_kd = kd_cost(
+                    logits[:, : self._known_classes],
+                    trans(self._old_network(inputs)["logits"]),
+                )
                 loss = self.lamda * loss_kd + loss_clf
                 optimizer.zero_grad()
                 loss.backward()

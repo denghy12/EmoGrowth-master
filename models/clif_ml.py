@@ -110,12 +110,14 @@ class CLIF(BaseLearner):
             ret_data=True,
             affective=True
         )
+        self.cls_criterion = self._build_multilabel_criterion(train_y, target_mode="current")
         self.train_x_ld = train_x
 
         ###calculate expert output and label_adj###
         if self._cur_task > 0:
+            current_train_y = self._targets_to_current_task(train_y)
             soft_label_known,_ = self._old_network(train_x.to(self._device), self.label_adj.to(self._device))
-            self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, train_y, ld=self.ld)
+            self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, current_train_y, ld=self.ld)
             # self.train_loader = DataLoader(
             #     TensorDataset(train_x,train_y,self.soft_label), batch_size=batch_size, shuffle=True, num_workers=num_workers
             # )
@@ -128,7 +130,7 @@ class CLIF(BaseLearner):
             )
             ######
         else:
-            self.label_adj = self.sym_conditional_prob(train_y)
+            self.label_adj = self.sym_conditional_prob(self._targets_to_current_task(train_y))
             self.train_loader = DataLoader(
                 train_dataset,
                 batch_size=self.batch_size,
@@ -172,7 +174,6 @@ class CLIF(BaseLearner):
 
     def _init_train(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.init_epoch))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         emb_cost = LinkPredictionLoss_cosine()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -183,7 +184,7 @@ class CLIF(BaseLearner):
                 loss_adj = label_adj + torch.eye(label_adj.data.size(0), dtype=label_adj.data.dtype,device=label_adj.data.device) ###identity matrix included###
                 logits,label_embedding = self._network(inputs,label_adj)
                 label_embedding = self._normalize_label_embedding(label_embedding, label_adj)
-                loss_clf = cost(logits, targets)
+                loss_clf = self.cls_criterion(logits, targets)
                 loss_le = emb_cost(label_embedding,loss_adj)
                 loss = loss_clf + self.lamda_le * loss_le
                 optimizer.zero_grad()
@@ -209,7 +210,7 @@ class CLIF(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
+        kd_cost = torch.nn.MultiLabelSoftMarginLoss()
         emb_cost = LinkPredictionLoss_cosine()
         trans = torch.nn.Sigmoid()
         self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
@@ -233,13 +234,13 @@ class CLIF(BaseLearner):
                 logits_1, label_embedding_1, feature_new = self._network(inputs,label_adj,kd=True)
                 ######
 
-                fake_targets = targets
-                loss_clf = cost(
+                fake_targets = self._targets_to_current_task(targets)
+                loss_clf = self.cls_criterion(
                     logits[:, self._known_classes :], fake_targets
                 )
 
                 loss_le = emb_cost(label_embedding,loss_adj)
-                loss_kd_logits = cost(logits[:,:self._known_classes],soft_targets)
+                loss_kd_logits = kd_cost(logits[:,:self._known_classes],soft_targets)
                 loss_kd_relation_1 = self.compute_relation_based_kd_loss(feature_old,feature_new)
                 loss_kd_relation_2 = self.compute_relation_based_kd_loss(affective_dimension,feature_new)
                 # loss = loss_clf + self.lamda_le * loss_le + self.lamda_kd_relation_data * loss_kd_relation_1 + lamda_kd_logits * loss_kd_logits ### 删除情感维度蒸馏 ###

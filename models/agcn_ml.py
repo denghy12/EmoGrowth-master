@@ -75,10 +75,12 @@ class AGCN(BaseLearner):
             source="train",
             ret_data=True
         )
+        self.cls_criterion = self._build_multilabel_criterion(train_y, target_mode="current")
         ###calculate expert output and label_adj###
         if self._cur_task > 0:
+            current_train_y = self._targets_to_current_task(train_y)
             soft_label_known = self._old_network(train_x.to(self._device), self.label_adj.to(self._device))
-            self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, train_y, ld=False)
+            self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, current_train_y, ld=False)
 
             self.train_loader = DataLoader(
                 TensorDataset(train_x,train_y),
@@ -88,7 +90,7 @@ class AGCN(BaseLearner):
             )
             ######
         else:
-            self.label_adj = self.sym_conditional_prob(train_y)
+            self.label_adj = self.sym_conditional_prob(self._targets_to_current_task(train_y))
             self.train_loader = DataLoader(
                 train_dataset,
                 batch_size=self.batch_size,
@@ -132,7 +134,6 @@ class AGCN(BaseLearner):
 
     def _init_train(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.init_epoch))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -140,7 +141,7 @@ class AGCN(BaseLearner):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 label_adj = self.label_adj.to(self._device)
                 logits = self._network(inputs,label_adj)
-                loss_clf = cost(logits, targets)
+                loss_clf = self.cls_criterion(logits, targets)
                 loss = loss_clf
                 optimizer.zero_grad()
                 loss.backward()
@@ -165,7 +166,7 @@ class AGCN(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
+        kd_cost = torch.nn.MultiLabelSoftMarginLoss()
         trans = torch.nn.Sigmoid()
         self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
         self._set_runtime_label_adj(self._old_network, self._old_label_adj.to(self._device))
@@ -179,12 +180,12 @@ class AGCN(BaseLearner):
                 label_adj = self.label_adj.to(self._device)
                 logits = self._network(inputs,label_adj)
 
-                fake_targets = targets
-                loss_clf = cost(
+                fake_targets = self._targets_to_current_task(targets)
+                loss_clf = self.cls_criterion(
                     logits[:, self._known_classes :], fake_targets
                 )
                 self._old_label_adj = self._old_label_adj.to(self._device)
-                loss_kd_logits = cost(logits[:,:self._known_classes],trans(self._old_network(inputs,self._old_label_adj)))
+                loss_kd_logits = kd_cost(logits[:,:self._known_classes],trans(self._old_network(inputs,self._old_label_adj)))
 
 
                 loss = loss_clf + self.lamda_kd_logits * loss_kd_logits

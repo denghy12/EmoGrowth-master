@@ -1,8 +1,11 @@
 __pycache__/
 *.py[cod]
 *.so
+.idea/
 
 logs/
+result/
+archive/
 results/
 results_*/
 data/

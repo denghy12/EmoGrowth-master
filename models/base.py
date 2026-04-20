@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from utils.ml_losses import build_multilabel_loss
 from utils.toolkit import tensor2numpy, accuracy
 from utils.metrics import average_precision,all_metrics
 try:
@@ -43,6 +44,8 @@ class BaseLearner(object):
         self.label_adj = None
         self.train_x_ld = None
         self.running_statistics = []
+        self.loss_type = args.get("loss_type", "softmargin")
+        self.loss_params = args.get("loss_params", {})
     @property
     def exemplar_size(self):
         assert len(self._data_memory) == len(
@@ -153,6 +156,49 @@ class BaseLearner(object):
         else:
             return (self._data_memory, self._targets_memory_ml)
 
+    def _targets_are_seen_labels(self, targets):
+        return targets.shape[1] == self._total_classes
+
+    def _targets_to_current_task(self, targets):
+        if self._known_classes == 0 or not self._targets_are_seen_labels(targets):
+            return targets
+        return targets[:, self._known_classes : self._total_classes]
+
+    def _targets_to_seen(self, targets):
+        if self._targets_are_seen_labels(targets) or self._known_classes == 0:
+            return targets
+        zeros = torch.zeros(
+            [targets.shape[0], self._known_classes],
+            dtype=targets.dtype,
+            device=targets.device,
+        )
+        return torch.hstack((zeros, targets))
+
+    def _target_row_to_global_indices(self, target_row):
+        positive_indices = np.where(target_row == 1)[0]
+        if target_row.shape[0] == self._total_classes:
+            return positive_indices.tolist()
+        return (positive_indices + self._known_classes).tolist()
+
+    def _target_row_to_seen(self, target_row):
+        if target_row.shape[0] == self._total_classes:
+            return target_row
+        return np.pad(target_row, (self._known_classes, 0), mode="constant")
+
+    def _build_multilabel_criterion(self, train_targets, target_mode):
+        if target_mode == "seen":
+            criterion_targets = self._targets_to_seen(train_targets)
+        elif target_mode == "current":
+            criterion_targets = self._targets_to_current_task(train_targets)
+        else:
+            raise ValueError(f"Unsupported target mode: {target_mode}")
+        return build_multilabel_loss(
+            self.loss_type,
+            criterion_targets,
+            self._device,
+            self.loss_params,
+        )
+
     def _compute_accuracy(self, model, loader):
         model.eval()
         correct, total = 0, 0
@@ -181,8 +227,7 @@ class BaseLearner(object):
                         outputs,_ = model(inputs,label_adj)
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
             else:
@@ -193,8 +238,7 @@ class BaseLearner(object):
                         outputs,_ = model(inputs,label_adj)
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
         else:
@@ -206,8 +250,7 @@ class BaseLearner(object):
                         outputs = model(inputs,label_adj)
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
             else:
@@ -217,8 +260,7 @@ class BaseLearner(object):
                         outputs = model(inputs)["logits"]
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
         output = np.concatenate(output)
@@ -511,8 +553,7 @@ class BaseLearner(object):
             else selected_exemplars
         )
         for index in selected_index:
-            fake_label_list = np.where(targets[index] == 1)[0]
-            label_list = [t+self._known_classes for t in fake_label_list]
+            label_list = self._target_row_to_global_indices(targets[index])
             self._targets_memory_ml.append(label_list)
 
     def _construct_exemplar_unified_ml_rs(self, data_manager, m):
@@ -530,8 +571,7 @@ class BaseLearner(object):
                 if random.randint(1,self.total_sample)<=m:
                     chosen_one = random.randint(0,m-1)
                     self._data_memory[chosen_one] = data[index]
-                    fake_label_list = np.where(targets[index] == 1)[0]
-                    label_list = [t + self._known_classes for t in fake_label_list]
+                    label_list = self._target_row_to_global_indices(targets[index])
                     self._targets_memory_ml[chosen_one] = label_list
             else:
                 selected_exemplars = np.expand_dims(data[index],axis=0)
@@ -540,8 +580,7 @@ class BaseLearner(object):
                     if len(self._data_memory) != 0
                     else selected_exemplars
                 )
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 self._targets_memory_ml.append(label_list)
 
     def _construct_exemplar_unified_ml_prs(self, data_manager, m):
@@ -556,8 +595,11 @@ class BaseLearner(object):
         ### initialization and updating running statistics
         running_statistics = self.running_statistics
         statistic_temp = np.sum(targets,axis=0)
-        running_statistics = running_statistics + statistic_temp.tolist()
-        running_statistics = np.array(running_statistics)
+        if targets.shape[1] == self._total_classes:
+            running_statistics = np.array(statistic_temp)
+        else:
+            running_statistics = running_statistics + statistic_temp.tolist()
+            running_statistics = np.array(running_statistics)
         ### compute target partion P and M ###
         N = running_statistics
         P = np.power(N,rou)/np.sum(np.power(N,rou))
@@ -567,7 +609,7 @@ class BaseLearner(object):
             self.total_sample += 1
             if self.exemplar_size == m:        ### buffer in full ###
                 ###sample-in###
-                temp = np.pad(targets[index],(self._known_classes,0),mode='constant') * np.exp(-N)
+                temp = self._target_row_to_seen(targets[index]) * np.exp(-N)
                 W = temp / np.sum(temp)
                 s = np.sum(M / N * W) ### probability of sample-in ###
                 if random.random() < s:
@@ -597,8 +639,7 @@ class BaseLearner(object):
                         K_min.append(np.sum(np.abs(Cki - P * np.sum(Cki))))
                     chosen_one = selected_index_K[np.argmin(np.array(K_min))]
                     self._data_memory[chosen_one] = data[index]
-                    fake_label_list = np.where(targets[index] == 1)[0]
-                    label_list = [t + self._known_classes for t in fake_label_list]
+                    label_list = self._target_row_to_global_indices(targets[index])
                     self._targets_memory_ml[chosen_one] = label_list
             else:                              ### buffer is not full ###
                 selected_exemplars = np.expand_dims(data[index],axis=0)
@@ -607,8 +648,7 @@ class BaseLearner(object):
                     if len(self._data_memory) != 0
                     else selected_exemplars
                 )
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 self._targets_memory_ml.append(label_list)
 
         self.running_statistics = running_statistics.tolist()
@@ -647,8 +687,7 @@ class BaseLearner(object):
                 else selected_exemplars
             )
             for index in chosen_index:
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 self._targets_memory_ml.append(label_list)
             data = np.delete(data,chosen_index,axis=0)
             targets = np.delete(targets,chosen_index,axis=0)
@@ -657,8 +696,7 @@ class BaseLearner(object):
             data = np.concatenate((self._data_memory, data))
             label_all = []
             for index in range(targets.shape[0]):
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 label_all.append(label_list)
             targets = self._targets_memory_ml + label_all
             ### data targets M+b_t chose M ###

@@ -57,14 +57,16 @@ class DataManager(object):
             if appendent is not None:
                 appendent_data, appendent_targets_ori = appendent
                 appendent_data = torch.from_numpy(appendent_data)
+                target_width = self.get_accumulate_tasksize(task_now)
                 appendent_targets = []
                 for temp in appendent_targets_ori:
-                    multi_hot_vector = np.zeros(self.get_accumulate_tasksize(task_now))
+                    multi_hot_vector = np.zeros(target_width)
                     multi_hot_vector[temp] = 1
                     appendent_targets.append(list(multi_hot_vector))
                 appendent_targets = torch.from_numpy(np.array(appendent_targets))
                 train_x = torch.cat((train_x,appendent_data),dim=0)
-                train_y = torch.hstack((torch.zeros([train_y.shape[0], self.get_accumulate_tasksize(task_now-1)]), train_y))
+                if train_y.shape[1] != target_width:
+                    train_y = torch.hstack((torch.zeros([train_y.shape[0], self.get_accumulate_tasksize(task_now-1)]), train_y))
                 train_y = torch.cat((train_y,appendent_targets),dim=0)
             print('train_samples_all = ', train_x.shape[0])
             if ret_data:
