@@ -365,6 +365,14 @@ def _train(args):
         total_class=args.get("total_class"),
     )
     model = factory.get_model(args["model_name"], args)
+    save_detailed_results = _detailed_results_enabled(args)
+    detail_context = None
+    if save_detailed_results:
+        detail_context = _build_detail_context(args, data_manager)
+        _prepare_detail_result_files(args)
+        detail_paths = _get_detail_result_paths(args)
+        logging.info("Detailed per-class metrics: %s", detail_paths["per_class"])
+        logging.info("Detailed per-task metrics: %s", detail_paths["per_task"])
 
     map_curve = {"map": []}
     hamming_loss_curve = {"hamming_loss": []}
@@ -381,13 +389,31 @@ def _train(args):
         model.incremental_train(data_manager)
 
         if args["model_name"] == "clif":
-            test_map, test_other_metrics = model.eval_multi_label_task(clif=True)
+            eval_result = model.eval_multi_label_task(
+                clif=True, return_outputs=save_detailed_results
+            )
         elif args["model_name"] == "agcn":
-            test_map, test_other_metrics = model.eval_multi_label_task(agcn=True)
+            eval_result = model.eval_multi_label_task(
+                agcn=True, return_outputs=save_detailed_results
+            )
         else:
-            test_map, test_other_metrics = model.eval_multi_label_task()
+            eval_result = model.eval_multi_label_task(
+                return_outputs=save_detailed_results
+            )
 
-        test_map = float(test_map.cpu().detach())
+        if save_detailed_results:
+            test_map, test_other_metrics, detail_outputs, detail_labels = eval_result
+            _append_detail_results(
+                args,
+                detail_context,
+                task,
+                detail_outputs,
+                detail_labels,
+            )
+        else:
+            test_map, test_other_metrics = eval_result
+
+        test_map = _to_float(test_map)
         model.after_task()
 
         map_curve["map"].append(test_map)
@@ -449,19 +475,331 @@ def _train(args):
 def _save_results(args, all_result):
     results_dir = _get_results_dir(args)
     os.makedirs(results_dir, exist_ok=True)
+    np.savetxt(
+        os.path.join(results_dir, _get_result_filename(args)),
+        all_result,
+        delimiter=",",
+    )
 
+
+def _get_result_filename(args):
     if args["model_name"] == "clif":
-        filename = (
+        return (
             f"clif_lamda_le_{args['lamda_le']}_"
             f"lamda_kd_relation_aff_{args['lamda_kd_relation_aff']}_"
             f"lamda_kd_relation_data_{args['lamda_kd_relation_data']}.csv"
         )
-    elif args["model_name"] == "replay":
-        filename = f"replay_{args['buffer_type']}.csv"
-    else:
-        filename = f"{args['model_name']}.csv"
+    if args["model_name"] == "replay":
+        return f"replay_{args['buffer_type']}.csv"
+    return f"{args['model_name']}.csv"
 
-    np.savetxt(os.path.join(results_dir, filename), all_result, delimiter=",")
+
+def _truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _detailed_results_enabled(args):
+    return _truthy(args.get("save_detailed_results", False))
+
+
+def _to_float(value):
+    if hasattr(value, "cpu"):
+        return float(value.cpu().detach())
+    return float(value)
+
+
+def _get_detail_results_dir(args):
+    split_name = _get_split_name(args["init_cls"], args["increment"])
+
+    if args.get("dataset") == "EMOTIC":
+        feature_path = args.get("feature_path", "")
+        inferred_backbone, _ = _infer_emotic_backbone(feature_path)
+        extractor_name = "vit" if inferred_backbone == "vit_b_16" else "resnet18"
+        order_name, protocol_name, _ = _infer_emotic_order_and_protocol(args)
+        loss_name = _infer_emotic_loss_name(args)
+        scale_name = _infer_emotic_scale(args)
+        result_root = args.get("detail_result_root", "./result_detail")
+        return os.path.join(
+            result_root,
+            extractor_name,
+            order_name,
+            protocol_name,
+            split_name,
+            loss_name,
+            scale_name,
+        )
+
+    detail_root = args.get("detail_result_root", "./result_detail")
+    return os.path.join(detail_root, args["subject"], split_name)
+
+
+def _get_detail_result_paths(args):
+    detail_dir = _get_detail_results_dir(args)
+    run_name = args.get("csv_name", args.get("prefix", "run"))
+    return {
+        "per_class": os.path.join(detail_dir, f"{run_name}_per_class_metrics.csv"),
+        "per_task": os.path.join(detail_dir, f"{run_name}_per_task_metrics.csv"),
+    }
+
+
+def _prepare_detail_result_files(args):
+    paths = _get_detail_result_paths(args)
+    os.makedirs(os.path.dirname(paths["per_class"]), exist_ok=True)
+    for path in paths.values():
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def _build_detail_context(args, data_manager):
+    _, _, manifest = _infer_emotic_order_and_protocol(args)
+    task_groups = manifest.get("task_groups", []) if isinstance(manifest, dict) else []
+    class_names = []
+    for task_group in task_groups:
+        class_names.extend(task_group.get("classes", []))
+    if not class_names:
+        class_order_path = os.path.join(args.get("data_root", ""), "class_order.json")
+        class_order = _load_json_if_exists(class_order_path)
+        if isinstance(class_order, list):
+            class_names.extend(class_order)
+
+    total_classes = data_manager.get_total_classnum()
+    while len(class_names) < total_classes:
+        class_names.append(f"class_{len(class_names)}")
+
+    task_ranges = []
+    class_task_ids = np.full(total_classes, -1, dtype=int)
+    start = 0
+    for task_id, task_size in enumerate(data_manager._increments):
+        end = start + task_size
+        task_ranges.append((start, end))
+        class_task_ids[start:end] = task_id
+        start = end
+
+    return {
+        "class_names": class_names,
+        "class_task_ids": class_task_ids,
+        "task_ranges": task_ranges,
+    }
+
+
+def _safe_div(numerator, denominator):
+    return float(numerator / denominator) if denominator else 0.0
+
+
+def _class_average_precision(scores, targets):
+    targets = targets.astype(int)
+    support = int(np.sum(targets == 1))
+    if support == 0:
+        return np.nan
+
+    order = np.argsort(-scores)
+    sorted_targets = targets[order]
+    positives_seen = np.cumsum(sorted_targets == 1)
+    ranks = np.arange(1, len(sorted_targets) + 1)
+    precision_at_positive = positives_seen[sorted_targets == 1] / ranks[sorted_targets == 1]
+    return float(np.mean(precision_at_positive))
+
+
+def _sample_average_precision(outputs, labels):
+    valid_scores = []
+    for scores, targets in zip(outputs, labels):
+        positive_count = int(np.count_nonzero(targets == 1))
+        if positive_count == 0:
+            continue
+        order = np.argsort(-scores)
+        sorted_targets = targets[order]
+        positives_seen = np.cumsum(sorted_targets == 1)
+        ranks = np.arange(1, len(sorted_targets) + 1)
+        precision_at_positive = positives_seen[sorted_targets == 1] / ranks[sorted_targets == 1]
+        valid_scores.append(float(np.mean(precision_at_positive)))
+    return float(np.mean(valid_scores)) if valid_scores else np.nan
+
+
+def _ranking_loss(outputs, labels):
+    losses = []
+    for scores, targets in zip(outputs, labels):
+        positive_count = int(np.count_nonzero(targets == 1))
+        negative_count = targets.shape[0] - positive_count
+        if positive_count == 0 or negative_count == 0:
+            continue
+        order = np.argsort(-scores)
+        sorted_targets = targets[order]
+        negatives_seen = 0
+        inversions = 0
+        for target in sorted_targets:
+            if target == 0:
+                negatives_seen += 1
+            else:
+                inversions += negatives_seen
+        losses.append(inversions / (positive_count * negative_count))
+    return float(np.mean(losses)) if losses else np.nan
+
+
+def _coverage(outputs, labels):
+    coverage_values = []
+    class_count = labels.shape[1]
+    if class_count == 0:
+        return np.nan
+    for scores, targets in zip(outputs, labels):
+        if np.sum(targets == 1) == 0:
+            continue
+        order = np.argsort(-scores)
+        sorted_targets = targets[order]
+        last_positive_rank = int(np.max(np.where(sorted_targets == 1)))
+        coverage_values.append(last_positive_rank / class_count)
+    return float(np.mean(coverage_values)) if coverage_values else np.nan
+
+
+def _one_error(outputs, labels):
+    if labels.shape[0] == 0 or labels.shape[1] == 0:
+        return np.nan
+    top_indices = np.argmax(outputs, axis=1)
+    misses = labels[np.arange(labels.shape[0]), top_indices] != 1
+    return float(np.mean(misses))
+
+
+def _per_class_rows(outputs, labels, detail_context, trained_task):
+    outputs = np.asarray(outputs)
+    labels = np.asarray(labels).astype(int)
+    predictions = (outputs > 0).astype(int)
+    width = min(outputs.shape[1], labels.shape[1], len(detail_context["class_names"]))
+    rows = []
+
+    for class_id in range(width):
+        target = labels[:, class_id]
+        prediction = predictions[:, class_id]
+        tp = int(np.sum((prediction == 1) & (target == 1)))
+        fp = int(np.sum((prediction == 1) & (target == 0)))
+        fn = int(np.sum((prediction == 0) & (target == 1)))
+        tn = int(np.sum((prediction == 0) & (target == 0)))
+        precision = _safe_div(tp, tp + fp)
+        recall = _safe_div(tp, tp + fn)
+        f1 = _safe_div(2 * precision * recall, precision + recall)
+        rows.append(
+            {
+                "trained_task": trained_task,
+                "trained_seen_classes": width,
+                "class_id": class_id,
+                "class_name": detail_context["class_names"][class_id],
+                "class_task": int(detail_context["class_task_ids"][class_id]),
+                "ap": _class_average_precision(outputs[:, class_id], target),
+                "f1": f1,
+                "precision": precision,
+                "recall": recall,
+                "support": int(np.sum(target == 1)),
+                "predicted_positive": int(np.sum(prediction == 1)),
+                "tp": tp,
+                "fp": fp,
+                "fn": fn,
+                "tn": tn,
+            }
+        )
+    return rows
+
+
+def _slice_metrics(outputs, labels):
+    outputs = np.asarray(outputs)
+    labels = np.asarray(labels).astype(int)
+    if outputs.shape[0] == 0 or outputs.shape[1] == 0:
+        return {
+            "map": np.nan,
+            "hamming_loss": np.nan,
+            "avg_precision": np.nan,
+            "one_error": np.nan,
+            "ranking_loss": np.nan,
+            "coverage": np.nan,
+            "macrof1": np.nan,
+            "microf1": np.nan,
+        }
+
+    predictions = (outputs > 0).astype(int)
+    tp = np.sum((predictions == 1) & (labels == 1), axis=0)
+    fp = np.sum((predictions == 1) & (labels == 0), axis=0)
+    fn = np.sum((predictions == 0) & (labels == 1), axis=0)
+
+    class_f1 = np.divide(
+        2 * tp,
+        2 * tp + fp + fn,
+        out=np.zeros_like(tp, dtype=float),
+        where=(2 * tp + fp + fn) != 0,
+    )
+    total_tp = int(np.sum(tp))
+    total_fp = int(np.sum(fp))
+    total_fn = int(np.sum(fn))
+    per_class_ap = [
+        _class_average_precision(outputs[:, class_id], labels[:, class_id])
+        for class_id in range(labels.shape[1])
+    ]
+    valid_ap = [ap for ap in per_class_ap if not np.isnan(ap)]
+
+    return {
+        "map": float(np.mean(valid_ap)) if valid_ap else np.nan,
+        "hamming_loss": float(np.mean(predictions != labels)),
+        "avg_precision": _sample_average_precision(outputs, labels),
+        "one_error": _one_error(outputs, labels),
+        "ranking_loss": _ranking_loss(outputs, labels),
+        "coverage": _coverage(outputs, labels),
+        "macrof1": float(np.mean(class_f1)),
+        "microf1": _safe_div(2 * total_tp, 2 * total_tp + total_fp + total_fn),
+    }
+
+
+def _per_task_rows(outputs, labels, detail_context, trained_task):
+    outputs = np.asarray(outputs)
+    labels = np.asarray(labels).astype(int)
+    width = min(outputs.shape[1], labels.shape[1])
+    rows = []
+
+    for eval_task, (start, end) in enumerate(detail_context["task_ranges"]):
+        if start >= width or eval_task > trained_task:
+            continue
+        clipped_end = min(end, width)
+        task_labels = labels[:, start:clipped_end]
+        task_outputs = outputs[:, start:clipped_end]
+        positive_mask = np.sum(task_labels == 1, axis=1) > 0
+        filtered_outputs = task_outputs[positive_mask]
+        filtered_labels = task_labels[positive_mask]
+        metrics = _slice_metrics(filtered_outputs, filtered_labels)
+        row = {
+            "trained_task": trained_task,
+            "trained_seen_classes": width,
+            "eval_task": eval_task,
+            "class_start": start,
+            "class_end_exclusive": clipped_end,
+            "num_classes": clipped_end - start,
+            "num_samples": int(np.sum(positive_mask)),
+        }
+        row.update(metrics)
+        rows.append(row)
+    return rows
+
+
+def _append_detail_results(args, detail_context, trained_task, outputs, labels):
+    paths = _get_detail_result_paths(args)
+    os.makedirs(os.path.dirname(paths["per_class"]), exist_ok=True)
+
+    per_class_df = pd.DataFrame(
+        _per_class_rows(outputs, labels, detail_context, trained_task)
+    )
+    per_task_df = pd.DataFrame(
+        _per_task_rows(outputs, labels, detail_context, trained_task)
+    )
+    per_class_df.to_csv(
+        paths["per_class"],
+        mode="a",
+        index=False,
+        header=not os.path.exists(paths["per_class"]),
+    )
+    per_task_df.to_csv(
+        paths["per_task"],
+        mode="a",
+        index=False,
+        header=not os.path.exists(paths["per_task"]),
+    )
 
 
 def _get_results_dir(args):
@@ -498,6 +836,9 @@ def _load_json_if_exists(path):
 
 
 def _infer_emotic_order_and_protocol(args):
+    protocol_override = args.get("protocol_name")
+    if protocol_override:
+        protocol_override = str(protocol_override)
     data_root = args.get("data_root", "")
     root_name = os.path.basename(os.path.abspath(data_root)).lower()
     manifest = _load_json_if_exists(os.path.join(data_root, "label_session_manifest.json"))
@@ -506,9 +847,11 @@ def _infer_emotic_order_and_protocol(args):
     if manifest is not None:
         class_order_mode = manifest.get("class_order_mode", "existing")
         train_assignment_mode = manifest.get("train_assignment_mode", "repeat_current")
+        train_label_mode = manifest.get("train_label_mode", args.get("train_label_mode", "current"))
     else:
         class_order_mode = None
         train_assignment_mode = None
+        train_label_mode = args.get("train_label_mode", None)
 
     if "balanced" in root_name:
         order_name = "balanced"
@@ -517,8 +860,12 @@ def _infer_emotic_order_and_protocol(args):
     else:
         order_name = "frequency"
 
-    if train_assignment_mode == "strict_owner" or "strict_owner" in root_name or "strict" in root_name:
+    if protocol_override:
+        protocol_name = protocol_override
+    elif train_assignment_mode == "strict_owner" or "strict_owner" in root_name or "strict" in root_name:
         protocol_name = "strict"
+    elif str(args.get("agcnpp_protocol", "")).lower() in {"il", "cl"}:
+        protocol_name = f"agcnpp_{str(args['agcnpp_protocol']).lower()}"
     else:
         protocol_name = "original"
 

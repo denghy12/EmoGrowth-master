@@ -72,6 +72,11 @@ class LwF(BaseLearner):
         self.cls_criterion = self._build_multilabel_criterion(
             train_y, target_mode="current"
         )
+        if self._cur_task > 0:
+            self._old_network.to(self._device)
+            with torch.no_grad():
+                old_logits = self._old_network(train_x.to(self._device))["logits"]
+            self.kd_logits_criterion = self._build_kd_logits_criterion(torch.sigmoid(old_logits).cpu())
 
         self.train_loader = DataLoader(
             train_dataset,
@@ -148,7 +153,6 @@ class LwF(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        kd_cost = torch.nn.MultiLabelSoftMarginLoss()
         trans = torch.nn.Sigmoid()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
@@ -161,7 +165,7 @@ class LwF(BaseLearner):
                 loss_clf = self.cls_criterion(
                     logits[:, self._known_classes :], fake_targets
                 )
-                loss_kd = kd_cost(
+                loss_kd = self.kd_logits_criterion(
                     logits[:, : self._known_classes],
                     trans(self._old_network(inputs)["logits"]),
                 )

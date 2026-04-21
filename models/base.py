@@ -46,6 +46,11 @@ class BaseLearner(object):
         self.running_statistics = []
         self.loss_type = args.get("loss_type", "softmargin")
         self.loss_params = args.get("loss_params", {})
+        self.kd_loss_type = args.get("kd_loss_type", "auto")
+        self.kd_loss_params = args.get("kd_loss_params", {})
+        self.train_assignment_mode = args.get("train_assignment_mode", "repeat_current")
+        self.train_label_mode = args.get("train_label_mode", "current")
+        self.agcnpp_protocol = args.get("agcnpp_protocol", "auto")
     @property
     def exemplar_size(self):
         assert len(self._data_memory) == len(
@@ -134,9 +139,14 @@ class BaseLearner(object):
 
         return cnn_accy, nme_accy
 
-    def eval_multi_label_task(self,clif=False,agcn=False):
-        test_map, test_other_metrics = self._compute_multi_label_accuracy(self._network, self.test_loader,clif=clif,agcn=agcn)
-        return test_map, test_other_metrics
+    def eval_multi_label_task(self, clif=False, agcn=False, return_outputs=False):
+        return self._compute_multi_label_accuracy(
+            self._network,
+            self.test_loader,
+            clif=clif,
+            agcn=agcn,
+            return_outputs=return_outputs,
+        )
 
     def incremental_train(self):
         pass
@@ -174,6 +184,38 @@ class BaseLearner(object):
         )
         return torch.hstack((zeros, targets))
 
+    def _resolve_train_label_mode(self):
+        if self.train_label_mode in ("current", "seen"):
+            return self.train_label_mode
+        protocol = str(self.agcnpp_protocol).lower()
+        if protocol == "cl":
+            return "seen"
+        return "current"
+
+    def _validate_seen_labels_available(self, train_targets, target_mode):
+        if target_mode != "seen" or self._known_classes == 0:
+            return
+        if not self._targets_are_seen_labels(train_targets):
+            raise ValueError(
+                "train_label_mode='seen' requires a label_session whose train labels "
+                "cover all seen classes. Rebuild the EMOTIC split with "
+                "--train-assignment-mode repeat_current --train-label-mode seen."
+            )
+
+    def _targets_for_train_label_mode(self, targets, target_mode):
+        if target_mode == "seen":
+            return self._targets_to_seen(targets)
+        if target_mode == "current":
+            return self._targets_to_current_task(targets)
+        raise ValueError(f"Unsupported train label mode: {target_mode}")
+
+    def _logits_for_train_label_mode(self, logits, target_mode):
+        if target_mode == "seen":
+            return logits[:, : self._total_classes]
+        if target_mode == "current":
+            return logits[:, self._known_classes : self._total_classes]
+        raise ValueError(f"Unsupported train label mode: {target_mode}")
+
     def _target_row_to_global_indices(self, target_row):
         positive_indices = np.where(target_row == 1)[0]
         if target_row.shape[0] == self._total_classes:
@@ -199,6 +241,40 @@ class BaseLearner(object):
             self.loss_params,
         )
 
+    def _resolve_kd_loss_type(self):
+        kd_loss_type = None if self.kd_loss_type is None else str(self.kd_loss_type).lower()
+        if kd_loss_type in (None, "auto"):
+            return "db" if str(self.loss_type).lower() == "db" else "softmargin"
+        if kd_loss_type == "same":
+            return str(self.loss_type).lower()
+        return kd_loss_type
+
+    def _build_kd_logits_criterion(self, soft_targets):
+        kd_loss_type = self._resolve_kd_loss_type()
+        if kd_loss_type == "softmargin":
+            return nn.MultiLabelSoftMarginLoss()
+
+        explicit_kd_loss_params = copy.deepcopy(self.kd_loss_params)
+        kd_loss_params = copy.deepcopy(self.loss_params) if kd_loss_type == str(self.loss_type).lower() else {}
+        kd_loss_params.update(explicit_kd_loss_params)
+        if kd_loss_type == "db":
+            kd_loss_params.setdefault("reweight_func", "rebalance")
+            for key, value in {
+                "focal": False,
+                "neg_scale": 1.0,
+                "init_bias": 0.0,
+                "weight_norm": "by_batch",
+            }.items():
+                if key not in explicit_kd_loss_params:
+                    kd_loss_params[key] = value
+
+        return build_multilabel_loss(
+            kd_loss_type,
+            soft_targets,
+            self._device,
+            kd_loss_params,
+        )
+
     def _compute_accuracy(self, model, loader):
         model.eval()
         correct, total = 0, 0
@@ -212,7 +288,17 @@ class BaseLearner(object):
 
         return np.around(tensor2numpy(correct) * 100 / total, decimals=2)
 
-    def _compute_multi_label_accuracy(self, model, loader,clif=False,train=False,update=False,er=False,agcn=False):
+    def _compute_multi_label_accuracy(
+        self,
+        model,
+        loader,
+        clif=False,
+        train=False,
+        update=False,
+        er=False,
+        agcn=False,
+        return_outputs=False,
+    ):
         model.eval()
         output = []
         label = []
@@ -267,6 +353,8 @@ class BaseLearner(object):
         label = np.concatenate(label)
         _, map = average_precision(torch.from_numpy(output), torch.from_numpy(label))
         other_metrics = all_metrics(output,label)
+        if return_outputs:
+            return map, other_metrics, output, label
         return map,other_metrics
 
     def _set_runtime_label_adj(self, model, label_adj):

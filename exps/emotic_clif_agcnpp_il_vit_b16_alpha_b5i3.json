@@ -1,8 +1,8 @@
 {
-    "prefix": "emotic_clif_formal_vit_b16_alpha_b5i3",
+    "prefix": "emotic_clif_agcnpp_il_vit_b16_alpha_b5i3",
     "dataset": "EMOTIC",
     "subject": "bbox_vit_b_16_alpha_b5i3",
-    "data_root": "./data/emotic_processed_alpha_b5i3",
+    "data_root": "./data/emotic_processed_alpha_agcnpp_il_b5i3",
     "feature_path": "./data/emotic_processed/feature_vit_b_16_bbox.npy",
     "results_root": "./results_formal_alpha",
     "memory_size": 500,
@@ -34,5 +34,11 @@
     "lamda_kd_relation_data": 1,
     "lamda_le": 0.005,
     "lamda_kd_logits": 1,
+    "loss_type": "softmargin",
+    "kd_loss_type": "softmargin",
+    "train_assignment_mode": "repeat_current",
+    "train_label_mode": "current",
+    "agcnpp_protocol": "il",
+    "protocol_name": "agcnpp_il",
     "sweep_hparams": false
 }

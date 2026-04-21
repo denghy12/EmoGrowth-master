@@ -5,9 +5,12 @@ __pycache__/
 
 logs/
 result/
+result_detail/
 archive/
 results/
 results_*/
+run_logs/
+tensorboard_runs/
 data/
 
 .pytest_cache/
