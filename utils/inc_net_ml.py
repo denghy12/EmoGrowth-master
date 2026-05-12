@@ -175,6 +175,10 @@ class IncrementalNet_CLIF(BaseNet_CLIF):
         self.fc.weight.data[-increment:, :] *= gamma
 
     def generate_fc(self, in_dim, out_dim):
+        # 对应论文 framework.png 中的 W_o^b。
+        # FDModel 输出的是 [B, C, H] 的 semantic-specific features；
+        # 这里用 groups=C 的 Conv1d 给每个情绪类别各自分配一个分类器，
+        # 把每个类别的 H 维特征压成 1 个 logit。
         fc = nn.Conv1d(out_dim,out_dim,in_dim,groups=out_dim)
 
         return fc
@@ -182,6 +186,8 @@ class IncrementalNet_CLIF(BaseNet_CLIF):
     def forward(self,x,label_adj,kd=False):
         label_adj = self._resolve_label_adj(label_adj)
         output = self.clifnet(x,label_adj)
+        # output["dis_features"] 来自 FDModel，对应图中的 semantic-specific features。
+        # 经过上面的分组分类器后得到 logits，shape=[batch_size, 当前已见类别数]。
         logits = self.fc(output["dis_features"]).squeeze(2)
         label_embedding = output['label_embedding']
         uni_features = output['uni_features']
@@ -234,6 +240,7 @@ class IncrementalNet_AGCN(BaseNet_AGCN):
         super().__init__(args)
         self.feature_dim = args['feature_dim']
         self.gcn_layer = gcn(self.feature_dim,1)
+
     def update_fc(self, nb_classes):
         fc = self.generate_fc(self.feature_dim, nb_classes)
         if self.fc is not None:

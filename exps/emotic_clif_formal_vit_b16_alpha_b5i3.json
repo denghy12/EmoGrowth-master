@@ -28,6 +28,7 @@
     "init_weight_decay": 0.005,
     "weight_decay": 0.005,
     "save_results": true,
+    "save_detailed_results": true,
     "ld": false,
     "lamda_kd_relation_aff": 0.1,
     "lamda_kd_relation_data": 1,

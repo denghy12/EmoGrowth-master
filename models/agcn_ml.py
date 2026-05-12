@@ -5,7 +5,6 @@ from torch import nn
 from torch.serialization import load
 from tqdm import tqdm
 from torch import optim
-from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from utils.inc_net_ml import IncrementalNet_AGCN
 from models.base import BaseLearner
@@ -55,6 +54,7 @@ class AGCN(BaseLearner):
         self.num_workers = args.get("num_workers", num_workers)
         self.lamda_kd_logits = args.get("lamda_kd_logits", lamda_kd_logits)
         self.subject = args["subject"]
+
     def after_task(self):
         self._old_network = self._network.copy().freeze()
         self._known_classes = self._total_classes
@@ -75,10 +75,22 @@ class AGCN(BaseLearner):
             source="train",
             ret_data=True
         )
+        self._active_train_label_mode = self._resolve_train_label_mode()
+        self._validate_seen_labels_available(train_y, self._active_train_label_mode)
+        self.cls_criterion = self._build_multilabel_criterion(
+            train_y, target_mode=self._active_train_label_mode
+        )
         ###calculate expert output and label_adj###
         if self._cur_task > 0:
-            soft_label_known = self._old_network(train_x.to(self._device), self.label_adj.to(self._device))
-            self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, train_y, ld=False)
+            with torch.no_grad():
+                soft_label_known = self._old_network(train_x.to(self._device), self.label_adj.to(self._device))
+            self.kd_logits_criterion = self._build_kd_logits_criterion(torch.sigmoid(soft_label_known).cpu())
+            if self._active_train_label_mode == "seen":
+                self.label_adj = self.sym_conditional_prob(train_y)
+                self.soft_label = torch.sigmoid(soft_label_known.cpu())
+            else:
+                current_train_y = self._targets_to_current_task(train_y)
+                self.label_adj,self.soft_label = self.sym_conditional_prob_update(soft_label_known.cpu(), self.label_adj, current_train_y, ld=False)
 
             self.train_loader = DataLoader(
                 TensorDataset(train_x,train_y),
@@ -88,7 +100,8 @@ class AGCN(BaseLearner):
             )
             ######
         else:
-            self.label_adj = self.sym_conditional_prob(train_y)
+            label_targets = self._targets_for_train_label_mode(train_y, self._active_train_label_mode)
+            self.label_adj = self.sym_conditional_prob(label_targets)
             self.train_loader = DataLoader(
                 train_dataset,
                 batch_size=self.batch_size,
@@ -132,20 +145,28 @@ class AGCN(BaseLearner):
 
     def _init_train(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.init_epoch))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
+            loss_sums = {
+                "loss_total": 0.0,
+                "loss_clf": 0.0,
+            }
             for i, (inputs, targets) in enumerate(train_loader):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 label_adj = self.label_adj.to(self._device)
                 logits = self._network(inputs,label_adj)
-                loss_clf = cost(logits, targets)
+                loss_targets = self._targets_for_train_label_mode(targets, self._active_train_label_mode)
+                loss_logits = self._logits_for_train_label_mode(logits, self._active_train_label_mode)
+                loss_clf = self.cls_criterion(loss_logits, loss_targets)
                 loss = loss_clf
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 losses += loss.item()
+                loss_sums["loss_total"] += self._loss_value(loss)
+                loss_sums["loss_clf"] += self._loss_value(loss_clf)
+            self._append_loss_details(epoch + 1, "init", loss_sums, len(train_loader))
             train_map,train_other_metrics = self._compute_multi_label_accuracy(self._network, self.train_loader,agcn=True)
             test_map,test_other_metrics = self._compute_multi_label_accuracy(self._network, self.test_loader,agcn=True)
 
@@ -165,13 +186,19 @@ class AGCN(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         trans = torch.nn.Sigmoid()
         self._set_runtime_label_adj(self._network, self.label_adj.to(self._device))
         self._set_runtime_label_adj(self._old_network, self._old_label_adj.to(self._device))
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
+            loss_sums = {
+                "loss_total": 0.0,
+                "loss_clf": 0.0,
+                "loss_kd_logits": 0.0,
+                "loss_clf_plus_kd_logits": 0.0,
+                "weighted_loss_kd_logits": 0.0,
+            }
             for i, (inputs, targets) in enumerate(train_loader):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
 
@@ -179,19 +206,32 @@ class AGCN(BaseLearner):
                 label_adj = self.label_adj.to(self._device)
                 logits = self._network(inputs,label_adj)
 
-                fake_targets = targets
-                loss_clf = cost(
-                    logits[:, self._known_classes :], fake_targets
+                loss_targets = self._targets_for_train_label_mode(targets, self._active_train_label_mode)
+                loss_logits = self._logits_for_train_label_mode(logits, self._active_train_label_mode)
+                loss_clf = self.cls_criterion(
+                    loss_logits, loss_targets
                 )
                 self._old_label_adj = self._old_label_adj.to(self._device)
-                loss_kd_logits = cost(logits[:,:self._known_classes],trans(self._old_network(inputs,self._old_label_adj)))
+                loss_kd_logits = self.kd_logits_criterion(
+                    logits[:, : self._known_classes],
+                    trans(self._old_network(inputs, self._old_label_adj)),
+                )
 
 
-                loss = loss_clf + self.lamda_kd_logits * loss_kd_logits
+                loss_clf_plus_kd_logits = loss_clf + self.lamda_kd_logits * loss_kd_logits
+                loss = loss_clf_plus_kd_logits
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 losses += loss.item()
+                loss_sums["loss_total"] += self._loss_value(loss)
+                loss_sums["loss_clf"] += self._loss_value(loss_clf)
+                loss_sums["loss_kd_logits"] += self._loss_value(loss_kd_logits)
+                loss_sums["loss_clf_plus_kd_logits"] += self._loss_value(loss_clf_plus_kd_logits)
+                loss_sums["weighted_loss_kd_logits"] += self._loss_value(
+                    self.lamda_kd_logits * loss_kd_logits
+                )
+            self._append_loss_details(epoch + 1, "update", loss_sums, len(train_loader))
             train_map, train_other_metrics = self._compute_multi_label_accuracy(self._network, self.train_loader,train=True,agcn=True)
             test_map, test_other_metrics = self._compute_multi_label_accuracy(self._network, self.test_loader,agcn=True)
             info = "Task {}, Epoch {}/{} => Loss {:.3f}, Train_accy {:.2f}, Test_accy {:.2f}, Train_other_metrics {}, Test_other_metrics {}".format(

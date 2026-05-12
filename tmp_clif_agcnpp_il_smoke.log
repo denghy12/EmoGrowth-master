@@ -1,0 +1,175 @@
+2026-04-20 21:30:43,206 [trainer_ml.py] => {
+  "agcnpp_protocol": "il",
+  "batch_size": "64",
+  "buffer_type": "prs",
+  "config": "./exps/tmp_clif_agcnpp_il_smoke.json",
+  "convnet_type": "clif",
+  "csv_name": "tmp_clif_agcnpp_il_smoke_1993_bbox_vit_b_16_alpha_b5i3_clif_20260420-213043",
+  "data_root": "./data/emotic_processed_alpha_agcnpp_il_b5i3",
+  "dataset": "EMOTIC",
+  "device": "[device(type='cuda', index=0), device(type='cuda', index=1)]",
+  "epochs": "1",
+  "feature_dim": "64",
+  "feature_path": "./data/emotic_processed/feature_vit_b_16_bbox.npy",
+  "fixed_memory": "True",
+  "increment": "3",
+  "init_cls": "5",
+  "init_epochs": "1",
+  "init_lr": "0.0001",
+  "init_weight_decay": "0.005",
+  "input_size": "768",
+  "kd_loss_type": "softmargin",
+  "lamda_kd_logits": "1",
+  "lamda_kd_relation_aff": "0.1",
+  "lamda_kd_relation_data": "1",
+  "lamda_le": "0.005",
+  "ld": "False",
+  "logfilename": "logs/vit/alphabetical/agcnpp_il/B5I3/softmargin/smoke/clif/tmp_clif_agcnpp_il_smoke_1993_bbox_vit_b_16_alpha_b5i3_clif_20260420-213043",
+  "loss_type": "softmargin",
+  "lrate": "0.0001",
+  "memory_per_class": "20",
+  "memory_size": "500",
+  "model_name": "clif",
+  "num_workers": "4",
+  "prefix": "tmp_clif_agcnpp_il_smoke",
+  "protocol_name": "agcnpp_il",
+  "results_root": "./results_formal_alpha",
+  "save_results": "True",
+  "seed": "1993",
+  "shuffle": "True",
+  "subject": "bbox_vit_b_16_alpha_b5i3",
+  "sweep_hparams": "False",
+  "time_str": "20260420-213043",
+  "total_class": "26",
+  "train_assignment_mode": "repeat_current",
+  "train_label_mode": "current",
+  "weight_decay": "0.005"
+}
+2026-04-20 21:30:43,303 [trainer_ml.py] => All params: 485093
+2026-04-20 21:30:43,303 [trainer_ml.py] => Trainable params: 484417
+2026-04-20 21:30:43,303 [clif_ml.py] => Learning on 0-5
+train_samples_all =  5353
+test_sampes =  5427
+  0%|          | 0/1 [00:00<?, ?it/s]Task 0, Epoch 1/1 => Loss 0.483, Train_accy 0.28, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.0921), ('avg_precision', 0.8768), ('one_error', 0.2062), ('ranking_loss', 0.0972), ('coverage', 0.0852), ('macrof1', 0.177), ('microf1', 0.7752)], Test_other_metrics [('hamming_loss', 0.114), ('avg_precision', 0.8842), ('one_error', 0.1765), ('ranking_loss', 0.101), ('coverage', 0.1241), ('macrof1', 0.1806), ('microf1', 0.7429)]:   0%|          | 0/1 [00:07<?, ?it/s]Task 0, Epoch 1/1 => Loss 0.483, Train_accy 0.28, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.0921), ('avg_precision', 0.8768), ('one_error', 0.2062), ('ranking_loss', 0.0972), ('coverage', 0.0852), ('macrof1', 0.177), ('microf1', 0.7752)], Test_other_metrics [('hamming_loss', 0.114), ('avg_precision', 0.8842), ('one_error', 0.1765), ('ranking_loss', 0.101), ('coverage', 0.1241), ('macrof1', 0.1806), ('microf1', 0.7429)]: 100%|██████████| 1/1 [00:07<00:00,  7.89s/it]Task 0, Epoch 1/1 => Loss 0.483, Train_accy 0.28, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.0921), ('avg_precision', 0.8768), ('one_error', 0.2062), ('ranking_loss', 0.0972), ('coverage', 0.0852), ('macrof1', 0.177), ('microf1', 0.7752)], Test_other_metrics [('hamming_loss', 0.114), ('avg_precision', 0.8842), ('one_error', 0.1765), ('ranking_loss', 0.101), ('coverage', 0.1241), ('macrof1', 0.1806), ('microf1', 0.7429)]: 100%|██████████| 1/1 [00:07<00:00,  7.89s/it]2026-04-20 21:30:52,476 [clif_ml.py] => Task 0, Epoch 1/1 => Loss 0.483, Train_accy 0.28, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.0921), ('avg_precision', 0.8768), ('one_error', 0.2062), ('ranking_loss', 0.0972), ('coverage', 0.0852), ('macrof1', 0.177), ('microf1', 0.7752)], Test_other_metrics [('hamming_loss', 0.114), ('avg_precision', 0.8842), ('one_error', 0.1765), ('ranking_loss', 0.101), ('coverage', 0.1241), ('macrof1', 0.1806), ('microf1', 0.7429)]
+
+2026-04-20 21:30:53,882 [trainer_ml.py] => Map curve: [0.2972319722175598]
+2026-04-20 21:30:53,883 [trainer_ml.py] => Hamming_loss curve: [0.114]
+2026-04-20 21:30:53,883 [trainer_ml.py] => avg_pre curve: [0.8842]
+2026-04-20 21:30:53,883 [trainer_ml.py] => One_error curve: [0.1765]
+2026-04-20 21:30:53,883 [trainer_ml.py] => Ranking_loss curve: [0.101]
+2026-04-20 21:30:53,883 [trainer_ml.py] => Coverage curve: [0.1241]
+2026-04-20 21:30:53,883 [trainer_ml.py] => Macrof1 curve: [0.1806]
+2026-04-20 21:30:53,883 [trainer_ml.py] => Microf1 curve: [0.7429]
+2026-04-20 21:30:53,883 [trainer_ml.py] => Average Accuracy: 0.297232, Average HL: 0.114000, Average eAP: 0.884200, Average OneE: 0.176500, Average RL: 0.101000, Average coverage: 0.124100, Average macrof1: 0.180600, Average microf1: 0.742900
+2026-04-20 21:30:53,883 [trainer_ml.py] => All params: 485418
+2026-04-20 21:30:53,883 [trainer_ml.py] => Trainable params: 484742
+2026-04-20 21:30:53,884 [clif_ml.py] => Learning on 5-8
+train_samples_all =  4394
+test_sampes =  6975
+  0%|          | 0/1 [00:00<?, ?it/s]Task 1, Epoch 1/1 => Loss 0.874, Train_accy 0.52, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.1688), ('avg_precision', 0.8687), ('one_error', 0.2449), ('ranking_loss', 0.1534), ('coverage', 0.1058), ('macrof1', 0.2868), ('microf1', 0.7489)], Test_other_metrics [('hamming_loss', 0.164), ('avg_precision', 0.7507), ('one_error', 0.3594), ('ranking_loss', 0.1486), ('coverage', 0.2496), ('macrof1', 0.1935), ('microf1', 0.6581)]:   0%|          | 0/1 [00:06<?, ?it/s]Task 1, Epoch 1/1 => Loss 0.874, Train_accy 0.52, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.1688), ('avg_precision', 0.8687), ('one_error', 0.2449), ('ranking_loss', 0.1534), ('coverage', 0.1058), ('macrof1', 0.2868), ('microf1', 0.7489)], Test_other_metrics [('hamming_loss', 0.164), ('avg_precision', 0.7507), ('one_error', 0.3594), ('ranking_loss', 0.1486), ('coverage', 0.2496), ('macrof1', 0.1935), ('microf1', 0.6581)]: 100%|██████████| 1/1 [00:06<00:00,  6.53s/it]Task 1, Epoch 1/1 => Loss 0.874, Train_accy 0.52, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.1688), ('avg_precision', 0.8687), ('one_error', 0.2449), ('ranking_loss', 0.1534), ('coverage', 0.1058), ('macrof1', 0.2868), ('microf1', 0.7489)], Test_other_metrics [('hamming_loss', 0.164), ('avg_precision', 0.7507), ('one_error', 0.3594), ('ranking_loss', 0.1486), ('coverage', 0.2496), ('macrof1', 0.1935), ('microf1', 0.6581)]: 100%|██████████| 1/1 [00:06<00:00,  6.53s/it]2026-04-20 21:31:00,468 [clif_ml.py] => Task 1, Epoch 1/1 => Loss 0.874, Train_accy 0.52, Test_accy 0.30, Train_other_metrics [('hamming_loss', 0.1688), ('avg_precision', 0.8687), ('one_error', 0.2449), ('ranking_loss', 0.1534), ('coverage', 0.1058), ('macrof1', 0.2868), ('microf1', 0.7489)], Test_other_metrics [('hamming_loss', 0.164), ('avg_precision', 0.7507), ('one_error', 0.3594), ('ranking_loss', 0.1486), ('coverage', 0.2496), ('macrof1', 0.1935), ('microf1', 0.6581)]
+
+2026-04-20 21:31:02,654 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918]
+2026-04-20 21:31:02,654 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164]
+2026-04-20 21:31:02,654 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507]
+2026-04-20 21:31:02,654 [trainer_ml.py] => One_error curve: [0.1765, 0.3594]
+2026-04-20 21:31:02,654 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486]
+2026-04-20 21:31:02,654 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496]
+2026-04-20 21:31:02,654 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935]
+2026-04-20 21:31:02,654 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581]
+2026-04-20 21:31:02,654 [trainer_ml.py] => Average Accuracy: 0.299037, Average HL: 0.139000, Average eAP: 0.817450, Average OneE: 0.267950, Average RL: 0.124800, Average coverage: 0.186850, Average macrof1: 0.187050, Average microf1: 0.700500
+2026-04-20 21:31:02,654 [trainer_ml.py] => All params: 485613
+2026-04-20 21:31:02,655 [trainer_ml.py] => Trainable params: 484937
+2026-04-20 21:31:02,655 [clif_ml.py] => Learning on 8-11
+train_samples_all =  861
+test_sampes =  7072
+  0%|          | 0/1 [00:00<?, ?it/s]Task 2, Epoch 1/1 => Loss 1.243, Train_accy 0.43, Test_accy 0.25, Train_other_metrics [('hamming_loss', 0.4042), ('avg_precision', 0.6844), ('one_error', 0.5377), ('ranking_loss', 0.4187), ('coverage', 0.3151), ('macrof1', 0.2567), ('microf1', 0.4393)], Test_other_metrics [('hamming_loss', 0.2155), ('avg_precision', 0.694), ('one_error', 0.3684), ('ranking_loss', 0.1892), ('coverage', 0.321), ('macrof1', 0.166), ('microf1', 0.5413)]:   0%|          | 0/1 [00:04<?, ?it/s]Task 2, Epoch 1/1 => Loss 1.243, Train_accy 0.43, Test_accy 0.25, Train_other_metrics [('hamming_loss', 0.4042), ('avg_precision', 0.6844), ('one_error', 0.5377), ('ranking_loss', 0.4187), ('coverage', 0.3151), ('macrof1', 0.2567), ('microf1', 0.4393)], Test_other_metrics [('hamming_loss', 0.2155), ('avg_precision', 0.694), ('one_error', 0.3684), ('ranking_loss', 0.1892), ('coverage', 0.321), ('macrof1', 0.166), ('microf1', 0.5413)]: 100%|██████████| 1/1 [00:04<00:00,  4.58s/it]Task 2, Epoch 1/1 => Loss 1.243, Train_accy 0.43, Test_accy 0.25, Train_other_metrics [('hamming_loss', 0.4042), ('avg_precision', 0.6844), ('one_error', 0.5377), ('ranking_loss', 0.4187), ('coverage', 0.3151), ('macrof1', 0.2567), ('microf1', 0.4393)], Test_other_metrics [('hamming_loss', 0.2155), ('avg_precision', 0.694), ('one_error', 0.3684), ('ranking_loss', 0.1892), ('coverage', 0.321), ('macrof1', 0.166), ('microf1', 0.5413)]: 100%|██████████| 1/1 [00:04<00:00,  4.58s/it]2026-04-20 21:31:07,260 [clif_ml.py] => Task 2, Epoch 1/1 => Loss 1.243, Train_accy 0.43, Test_accy 0.25, Train_other_metrics [('hamming_loss', 0.4042), ('avg_precision', 0.6844), ('one_error', 0.5377), ('ranking_loss', 0.4187), ('coverage', 0.3151), ('macrof1', 0.2567), ('microf1', 0.4393)], Test_other_metrics [('hamming_loss', 0.2155), ('avg_precision', 0.694), ('one_error', 0.3684), ('ranking_loss', 0.1892), ('coverage', 0.321), ('macrof1', 0.166), ('microf1', 0.5413)]
+
+2026-04-20 21:31:09,720 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918, 0.24727004766464233]
+2026-04-20 21:31:09,720 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164, 0.2155]
+2026-04-20 21:31:09,720 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507, 0.694]
+2026-04-20 21:31:09,720 [trainer_ml.py] => One_error curve: [0.1765, 0.3594, 0.3684]
+2026-04-20 21:31:09,720 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486, 0.1892]
+2026-04-20 21:31:09,720 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496, 0.321]
+2026-04-20 21:31:09,720 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935, 0.166]
+2026-04-20 21:31:09,720 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581, 0.5413]
+2026-04-20 21:31:09,721 [trainer_ml.py] => Average Accuracy: 0.281781, Average HL: 0.164500, Average eAP: 0.776300, Average OneE: 0.301433, Average RL: 0.146267, Average coverage: 0.231567, Average macrof1: 0.180033, Average microf1: 0.647433
+2026-04-20 21:31:09,721 [trainer_ml.py] => All params: 485808
+2026-04-20 21:31:09,721 [trainer_ml.py] => Trainable params: 485132
+2026-04-20 21:31:09,721 [clif_ml.py] => Learning on 11-14
+train_samples_all =  9931
+test_sampes =  7629
+  0%|          | 0/1 [00:00<?, ?it/s]Task 3, Epoch 1/1 => Loss 1.048, Train_accy 0.49, Test_accy 0.31, Train_other_metrics [('hamming_loss', 0.2067), ('avg_precision', 0.8899), ('one_error', 0.2057), ('ranking_loss', 0.1321), ('coverage', 0.1623), ('macrof1', 0.3759), ('microf1', 0.7327)], Test_other_metrics [('hamming_loss', 0.2344), ('avg_precision', 0.671), ('one_error', 0.3712), ('ranking_loss', 0.2153), ('coverage', 0.5086), ('macrof1', 0.201), ('microf1', 0.57)]:   0%|          | 0/1 [00:12<?, ?it/s]Task 3, Epoch 1/1 => Loss 1.048, Train_accy 0.49, Test_accy 0.31, Train_other_metrics [('hamming_loss', 0.2067), ('avg_precision', 0.8899), ('one_error', 0.2057), ('ranking_loss', 0.1321), ('coverage', 0.1623), ('macrof1', 0.3759), ('microf1', 0.7327)], Test_other_metrics [('hamming_loss', 0.2344), ('avg_precision', 0.671), ('one_error', 0.3712), ('ranking_loss', 0.2153), ('coverage', 0.5086), ('macrof1', 0.201), ('microf1', 0.57)]: 100%|██████████| 1/1 [00:12<00:00, 12.29s/it]Task 3, Epoch 1/1 => Loss 1.048, Train_accy 0.49, Test_accy 0.31, Train_other_metrics [('hamming_loss', 0.2067), ('avg_precision', 0.8899), ('one_error', 0.2057), ('ranking_loss', 0.1321), ('coverage', 0.1623), ('macrof1', 0.3759), ('microf1', 0.7327)], Test_other_metrics [('hamming_loss', 0.2344), ('avg_precision', 0.671), ('one_error', 0.3712), ('ranking_loss', 0.2153), ('coverage', 0.5086), ('macrof1', 0.201), ('microf1', 0.57)]: 100%|██████████| 1/1 [00:12<00:00, 12.29s/it]2026-04-20 21:31:22,064 [clif_ml.py] => Task 3, Epoch 1/1 => Loss 1.048, Train_accy 0.49, Test_accy 0.31, Train_other_metrics [('hamming_loss', 0.2067), ('avg_precision', 0.8899), ('one_error', 0.2057), ('ranking_loss', 0.1321), ('coverage', 0.1623), ('macrof1', 0.3759), ('microf1', 0.7327)], Test_other_metrics [('hamming_loss', 0.2344), ('avg_precision', 0.671), ('one_error', 0.3712), ('ranking_loss', 0.2153), ('coverage', 0.5086), ('macrof1', 0.201), ('microf1', 0.57)]
+
+2026-04-20 21:31:24,901 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918, 0.24727004766464233, 0.3076881766319275]
+2026-04-20 21:31:24,901 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164, 0.2155, 0.2344]
+2026-04-20 21:31:24,902 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507, 0.694, 0.671]
+2026-04-20 21:31:24,902 [trainer_ml.py] => One_error curve: [0.1765, 0.3594, 0.3684, 0.3712]
+2026-04-20 21:31:24,902 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486, 0.1892, 0.2153]
+2026-04-20 21:31:24,902 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496, 0.321, 0.5086]
+2026-04-20 21:31:24,902 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935, 0.166, 0.201]
+2026-04-20 21:31:24,902 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581, 0.5413, 0.57]
+2026-04-20 21:31:24,902 [trainer_ml.py] => Average Accuracy: 0.288258, Average HL: 0.181975, Average eAP: 0.749975, Average OneE: 0.318875, Average RL: 0.163525, Average coverage: 0.300825, Average macrof1: 0.185275, Average microf1: 0.628075
+2026-04-20 21:31:24,902 [trainer_ml.py] => All params: 486003
+2026-04-20 21:31:24,902 [trainer_ml.py] => Trainable params: 485327
+2026-04-20 21:31:24,902 [clif_ml.py] => Learning on 14-17
+train_samples_all =  4352
+test_sampes =  7739
+  0%|          | 0/1 [00:00<?, ?it/s]Task 4, Epoch 1/1 => Loss 0.971, Train_accy 0.38, Test_accy 0.29, Train_other_metrics [('hamming_loss', 0.0911), ('avg_precision', 0.9292), ('one_error', 0.1337), ('ranking_loss', 0.0804), ('coverage', 0.0548), ('macrof1', 0.3094), ('microf1', 0.8637)], Test_other_metrics [('hamming_loss', 0.2278), ('avg_precision', 0.6575), ('one_error', 0.3741), ('ranking_loss', 0.1964), ('coverage', 0.511), ('macrof1', 0.2035), ('microf1', 0.5791)]:   0%|          | 0/1 [00:08<?, ?it/s]Task 4, Epoch 1/1 => Loss 0.971, Train_accy 0.38, Test_accy 0.29, Train_other_metrics [('hamming_loss', 0.0911), ('avg_precision', 0.9292), ('one_error', 0.1337), ('ranking_loss', 0.0804), ('coverage', 0.0548), ('macrof1', 0.3094), ('microf1', 0.8637)], Test_other_metrics [('hamming_loss', 0.2278), ('avg_precision', 0.6575), ('one_error', 0.3741), ('ranking_loss', 0.1964), ('coverage', 0.511), ('macrof1', 0.2035), ('microf1', 0.5791)]: 100%|██████████| 1/1 [00:08<00:00,  8.44s/it]Task 4, Epoch 1/1 => Loss 0.971, Train_accy 0.38, Test_accy 0.29, Train_other_metrics [('hamming_loss', 0.0911), ('avg_precision', 0.9292), ('one_error', 0.1337), ('ranking_loss', 0.0804), ('coverage', 0.0548), ('macrof1', 0.3094), ('microf1', 0.8637)], Test_other_metrics [('hamming_loss', 0.2278), ('avg_precision', 0.6575), ('one_error', 0.3741), ('ranking_loss', 0.1964), ('coverage', 0.511), ('macrof1', 0.2035), ('microf1', 0.5791)]: 100%|██████████| 1/1 [00:08<00:00,  8.44s/it]2026-04-20 21:31:33,378 [clif_ml.py] => Task 4, Epoch 1/1 => Loss 0.971, Train_accy 0.38, Test_accy 0.29, Train_other_metrics [('hamming_loss', 0.0911), ('avg_precision', 0.9292), ('one_error', 0.1337), ('ranking_loss', 0.0804), ('coverage', 0.0548), ('macrof1', 0.3094), ('microf1', 0.8637)], Test_other_metrics [('hamming_loss', 0.2278), ('avg_precision', 0.6575), ('one_error', 0.3741), ('ranking_loss', 0.1964), ('coverage', 0.511), ('macrof1', 0.2035), ('microf1', 0.5791)]
+
+2026-04-20 21:31:36,598 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918, 0.24727004766464233, 0.3076881766319275, 0.2900571823120117]
+2026-04-20 21:31:36,598 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164, 0.2155, 0.2344, 0.2278]
+2026-04-20 21:31:36,598 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507, 0.694, 0.671, 0.6575]
+2026-04-20 21:31:36,598 [trainer_ml.py] => One_error curve: [0.1765, 0.3594, 0.3684, 0.3712, 0.3741]
+2026-04-20 21:31:36,598 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486, 0.1892, 0.2153, 0.1964]
+2026-04-20 21:31:36,598 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496, 0.321, 0.5086, 0.511]
+2026-04-20 21:31:36,598 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935, 0.166, 0.201, 0.2035]
+2026-04-20 21:31:36,598 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581, 0.5413, 0.57, 0.5791]
+2026-04-20 21:31:36,598 [trainer_ml.py] => Average Accuracy: 0.288618, Average HL: 0.191140, Average eAP: 0.731480, Average OneE: 0.329920, Average RL: 0.170100, Average coverage: 0.342860, Average macrof1: 0.188920, Average microf1: 0.618280
+2026-04-20 21:31:36,599 [trainer_ml.py] => All params: 486198
+2026-04-20 21:31:36,599 [trainer_ml.py] => Trainable params: 485522
+2026-04-20 21:31:36,599 [clif_ml.py] => Learning on 17-20
+train_samples_all =  2536
+test_sampes =  7751
+  0%|          | 0/1 [00:00<?, ?it/s]Task 5, Epoch 1/1 => Loss 1.265, Train_accy 0.37, Test_accy 0.27, Train_other_metrics [('hamming_loss', 0.3375), ('avg_precision', 0.7757), ('one_error', 0.4318), ('ranking_loss', 0.2413), ('coverage', 0.1885), ('macrof1', 0.4529), ('microf1', 0.6698)], Test_other_metrics [('hamming_loss', 0.2718), ('avg_precision', 0.6412), ('one_error', 0.3701), ('ranking_loss', 0.2051), ('coverage', 0.5532), ('macrof1', 0.2039), ('microf1', 0.5324)]:   0%|          | 0/1 [00:07<?, ?it/s]Task 5, Epoch 1/1 => Loss 1.265, Train_accy 0.37, Test_accy 0.27, Train_other_metrics [('hamming_loss', 0.3375), ('avg_precision', 0.7757), ('one_error', 0.4318), ('ranking_loss', 0.2413), ('coverage', 0.1885), ('macrof1', 0.4529), ('microf1', 0.6698)], Test_other_metrics [('hamming_loss', 0.2718), ('avg_precision', 0.6412), ('one_error', 0.3701), ('ranking_loss', 0.2051), ('coverage', 0.5532), ('macrof1', 0.2039), ('microf1', 0.5324)]: 100%|██████████| 1/1 [00:07<00:00,  7.54s/it]Task 5, Epoch 1/1 => Loss 1.265, Train_accy 0.37, Test_accy 0.27, Train_other_metrics [('hamming_loss', 0.3375), ('avg_precision', 0.7757), ('one_error', 0.4318), ('ranking_loss', 0.2413), ('coverage', 0.1885), ('macrof1', 0.4529), ('microf1', 0.6698)], Test_other_metrics [('hamming_loss', 0.2718), ('avg_precision', 0.6412), ('one_error', 0.3701), ('ranking_loss', 0.2051), ('coverage', 0.5532), ('macrof1', 0.2039), ('microf1', 0.5324)]: 100%|██████████| 1/1 [00:07<00:00,  7.54s/it]2026-04-20 21:31:44,172 [clif_ml.py] => Task 5, Epoch 1/1 => Loss 1.265, Train_accy 0.37, Test_accy 0.27, Train_other_metrics [('hamming_loss', 0.3375), ('avg_precision', 0.7757), ('one_error', 0.4318), ('ranking_loss', 0.2413), ('coverage', 0.1885), ('macrof1', 0.4529), ('microf1', 0.6698)], Test_other_metrics [('hamming_loss', 0.2718), ('avg_precision', 0.6412), ('one_error', 0.3701), ('ranking_loss', 0.2051), ('coverage', 0.5532), ('macrof1', 0.2039), ('microf1', 0.5324)]
+
+2026-04-20 21:31:47,164 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918, 0.24727004766464233, 0.3076881766319275, 0.2900571823120117, 0.26790904998779297]
+2026-04-20 21:31:47,165 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164, 0.2155, 0.2344, 0.2278, 0.2718]
+2026-04-20 21:31:47,165 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507, 0.694, 0.671, 0.6575, 0.6412]
+2026-04-20 21:31:47,165 [trainer_ml.py] => One_error curve: [0.1765, 0.3594, 0.3684, 0.3712, 0.3741, 0.3701]
+2026-04-20 21:31:47,165 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486, 0.1892, 0.2153, 0.1964, 0.2051]
+2026-04-20 21:31:47,165 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496, 0.321, 0.5086, 0.511, 0.5532]
+2026-04-20 21:31:47,165 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935, 0.166, 0.201, 0.2035, 0.2039]
+2026-04-20 21:31:47,165 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581, 0.5413, 0.57, 0.5791, 0.5324]
+2026-04-20 21:31:47,165 [trainer_ml.py] => Average Accuracy: 0.285166, Average HL: 0.204583, Average eAP: 0.716433, Average OneE: 0.336617, Average RL: 0.175933, Average coverage: 0.377917, Average macrof1: 0.191417, Average microf1: 0.603967
+2026-04-20 21:31:47,165 [trainer_ml.py] => All params: 486393
+2026-04-20 21:31:47,165 [trainer_ml.py] => Trainable params: 485717
+2026-04-20 21:31:47,166 [clif_ml.py] => Learning on 20-23
+train_samples_all =  627
+test_sampes =  7764
+  0%|          | 0/1 [00:00<?, ?it/s]Task 6, Epoch 1/1 => Loss 1.325, Train_accy 0.55, Test_accy 0.24, Train_other_metrics [('hamming_loss', 0.4072), ('avg_precision', 0.7209), ('one_error', 0.4944), ('ranking_loss', 0.4171), ('coverage', 0.3179), ('macrof1', 0.3788), ('microf1', 0.5013)], Test_other_metrics [('hamming_loss', 0.2869), ('avg_precision', 0.6094), ('one_error', 0.4186), ('ranking_loss', 0.2221), ('coverage', 0.5878), ('macrof1', 0.1887), ('microf1', 0.4876)]:   0%|          | 0/1 [00:06<?, ?it/s]Task 6, Epoch 1/1 => Loss 1.325, Train_accy 0.55, Test_accy 0.24, Train_other_metrics [('hamming_loss', 0.4072), ('avg_precision', 0.7209), ('one_error', 0.4944), ('ranking_loss', 0.4171), ('coverage', 0.3179), ('macrof1', 0.3788), ('microf1', 0.5013)], Test_other_metrics [('hamming_loss', 0.2869), ('avg_precision', 0.6094), ('one_error', 0.4186), ('ranking_loss', 0.2221), ('coverage', 0.5878), ('macrof1', 0.1887), ('microf1', 0.4876)]: 100%|██████████| 1/1 [00:06<00:00,  6.29s/it]Task 6, Epoch 1/1 => Loss 1.325, Train_accy 0.55, Test_accy 0.24, Train_other_metrics [('hamming_loss', 0.4072), ('avg_precision', 0.7209), ('one_error', 0.4944), ('ranking_loss', 0.4171), ('coverage', 0.3179), ('macrof1', 0.3788), ('microf1', 0.5013)], Test_other_metrics [('hamming_loss', 0.2869), ('avg_precision', 0.6094), ('one_error', 0.4186), ('ranking_loss', 0.2221), ('coverage', 0.5878), ('macrof1', 0.1887), ('microf1', 0.4876)]: 100%|██████████| 1/1 [00:06<00:00,  6.29s/it]2026-04-20 21:31:53,478 [clif_ml.py] => Task 6, Epoch 1/1 => Loss 1.325, Train_accy 0.55, Test_accy 0.24, Train_other_metrics [('hamming_loss', 0.4072), ('avg_precision', 0.7209), ('one_error', 0.4944), ('ranking_loss', 0.4171), ('coverage', 0.3179), ('macrof1', 0.3788), ('microf1', 0.5013)], Test_other_metrics [('hamming_loss', 0.2869), ('avg_precision', 0.6094), ('one_error', 0.4186), ('ranking_loss', 0.2221), ('coverage', 0.5878), ('macrof1', 0.1887), ('microf1', 0.4876)]
+
+2026-04-20 21:31:57,499 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918, 0.24727004766464233, 0.3076881766319275, 0.2900571823120117, 0.26790904998779297, 0.24341456592082977]
+2026-04-20 21:31:57,500 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164, 0.2155, 0.2344, 0.2278, 0.2718, 0.2869]
+2026-04-20 21:31:57,500 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507, 0.694, 0.671, 0.6575, 0.6412, 0.6094]
+2026-04-20 21:31:57,500 [trainer_ml.py] => One_error curve: [0.1765, 0.3594, 0.3684, 0.3712, 0.3741, 0.3701, 0.4186]
+2026-04-20 21:31:57,500 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486, 0.1892, 0.2153, 0.1964, 0.2051, 0.2221]
+2026-04-20 21:31:57,500 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496, 0.321, 0.5086, 0.511, 0.5532, 0.5878]
+2026-04-20 21:31:57,500 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935, 0.166, 0.201, 0.2035, 0.2039, 0.1887]
+2026-04-20 21:31:57,500 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581, 0.5413, 0.57, 0.5791, 0.5324, 0.4876]
+2026-04-20 21:31:57,500 [trainer_ml.py] => Average Accuracy: 0.279202, Average HL: 0.216343, Average eAP: 0.701143, Average OneE: 0.348329, Average RL: 0.182529, Average coverage: 0.407900, Average macrof1: 0.191029, Average microf1: 0.587343
+2026-04-20 21:31:57,500 [trainer_ml.py] => All params: 486588
+2026-04-20 21:31:57,500 [trainer_ml.py] => Trainable params: 485912
+2026-04-20 21:31:57,501 [clif_ml.py] => Learning on 23-26
+train_samples_all =  1526
+test_sampes =  7765
+  0%|          | 0/1 [00:00<?, ?it/s]Task 7, Epoch 1/1 => Loss 1.253, Train_accy 0.46, Test_accy 0.23, Train_other_metrics [('hamming_loss', 0.3386), ('avg_precision', 0.7034), ('one_error', 0.5321), ('ranking_loss', 0.364), ('coverage', 0.2486), ('macrof1', 0.024), ('microf1', 0.03)], Test_other_metrics [('hamming_loss', 0.2655), ('avg_precision', 0.5873), ('one_error', 0.4215), ('ranking_loss', 0.2293), ('coverage', 0.6035), ('macrof1', 0.168), ('microf1', 0.4765)]:   0%|          | 0/1 [00:06<?, ?it/s]Task 7, Epoch 1/1 => Loss 1.253, Train_accy 0.46, Test_accy 0.23, Train_other_metrics [('hamming_loss', 0.3386), ('avg_precision', 0.7034), ('one_error', 0.5321), ('ranking_loss', 0.364), ('coverage', 0.2486), ('macrof1', 0.024), ('microf1', 0.03)], Test_other_metrics [('hamming_loss', 0.2655), ('avg_precision', 0.5873), ('one_error', 0.4215), ('ranking_loss', 0.2293), ('coverage', 0.6035), ('macrof1', 0.168), ('microf1', 0.4765)]: 100%|██████████| 1/1 [00:06<00:00,  6.35s/it]Task 7, Epoch 1/1 => Loss 1.253, Train_accy 0.46, Test_accy 0.23, Train_other_metrics [('hamming_loss', 0.3386), ('avg_precision', 0.7034), ('one_error', 0.5321), ('ranking_loss', 0.364), ('coverage', 0.2486), ('macrof1', 0.024), ('microf1', 0.03)], Test_other_metrics [('hamming_loss', 0.2655), ('avg_precision', 0.5873), ('one_error', 0.4215), ('ranking_loss', 0.2293), ('coverage', 0.6035), ('macrof1', 0.168), ('microf1', 0.4765)]: 100%|██████████| 1/1 [00:06<00:00,  6.35s/it]2026-04-20 21:32:03,871 [clif_ml.py] => Task 7, Epoch 1/1 => Loss 1.253, Train_accy 0.46, Test_accy 0.23, Train_other_metrics [('hamming_loss', 0.3386), ('avg_precision', 0.7034), ('one_error', 0.5321), ('ranking_loss', 0.364), ('coverage', 0.2486), ('macrof1', 0.024), ('microf1', 0.03)], Test_other_metrics [('hamming_loss', 0.2655), ('avg_precision', 0.5873), ('one_error', 0.4215), ('ranking_loss', 0.2293), ('coverage', 0.6035), ('macrof1', 0.168), ('microf1', 0.4765)]
+
+2026-04-20 21:32:09,384 [trainer_ml.py] => Map curve: [0.2972319722175598, 0.3008418083190918, 0.24727004766464233, 0.3076881766319275, 0.2900571823120117, 0.26790904998779297, 0.24341456592082977, 0.22882932424545288]
+2026-04-20 21:32:09,384 [trainer_ml.py] => Hamming_loss curve: [0.114, 0.164, 0.2155, 0.2344, 0.2278, 0.2718, 0.2869, 0.2655]
+2026-04-20 21:32:09,384 [trainer_ml.py] => avg_pre curve: [0.8842, 0.7507, 0.694, 0.671, 0.6575, 0.6412, 0.6094, 0.5873]
+2026-04-20 21:32:09,384 [trainer_ml.py] => One_error curve: [0.1765, 0.3594, 0.3684, 0.3712, 0.3741, 0.3701, 0.4186, 0.4215]
+2026-04-20 21:32:09,384 [trainer_ml.py] => Ranking_loss curve: [0.101, 0.1486, 0.1892, 0.2153, 0.1964, 0.2051, 0.2221, 0.2293]
+2026-04-20 21:32:09,384 [trainer_ml.py] => Coverage curve: [0.1241, 0.2496, 0.321, 0.5086, 0.511, 0.5532, 0.5878, 0.6035]
+2026-04-20 21:32:09,384 [trainer_ml.py] => Macrof1 curve: [0.1806, 0.1935, 0.166, 0.201, 0.2035, 0.2039, 0.1887, 0.168]
+2026-04-20 21:32:09,384 [trainer_ml.py] => Microf1 curve: [0.7429, 0.6581, 0.5413, 0.57, 0.5791, 0.5324, 0.4876, 0.4765]
+2026-04-20 21:32:09,384 [trainer_ml.py] => Average Accuracy: 0.272905, Average HL: 0.222488, Average eAP: 0.686913, Average OneE: 0.357475, Average RL: 0.188375, Average coverage: 0.432350, Average macrof1: 0.188150, Average microf1: 0.573487

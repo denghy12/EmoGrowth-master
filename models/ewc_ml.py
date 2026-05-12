@@ -74,9 +74,13 @@ class EWC(BaseLearner):
             "Learning on {}-{}".format(self._known_classes, self._total_classes)
         )
 
-        train_dataset = data_manager.get_dataset(
+        train_x, train_y, train_dataset = data_manager.get_dataset(
             self._cur_task,
-            source="train"
+            source="train",
+            ret_data=True,
+        )
+        self.cls_criterion = self._build_multilabel_criterion(
+            train_y, target_mode="seen"
         )
         self.train_loader = DataLoader(
             train_dataset,
@@ -136,14 +140,13 @@ class EWC(BaseLearner):
 
     def _init_train(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.init_epoch))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
             for i, (inputs, targets) in enumerate(train_loader):
                 inputs, targets = inputs.to(self._device), targets.to(self._device)
                 logits = self._network(inputs)["logits"]
-                loss = cost(logits, targets)
+                loss = self.cls_criterion(logits, targets)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -167,7 +170,6 @@ class EWC(BaseLearner):
 
     def _update_representation(self, train_loader, test_loader, optimizer):
         prog_bar = tqdm(range(self.epochs))
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for _, epoch in enumerate(prog_bar):
             self._network.train()
             losses = 0.0
@@ -179,11 +181,8 @@ class EWC(BaseLearner):
                 # loss_clf = cost(
                 #     logits[:, self._known_classes:], fake_targets
                 # )
-
-                fake_targets = self.fake_target_gen(targets)
-                loss_clf = cost(
-                    logits, fake_targets
-                )
+                seen_targets = self._targets_to_seen(targets)
+                loss_clf = self.cls_criterion(logits, seen_targets)
 
                 loss_ewc = self.compute_ewc()
                 loss = loss_clf + self.ewc_lambda * loss_ewc
@@ -239,11 +238,11 @@ class EWC(BaseLearner):
         }
         self._network.train()
         optimizer = optim.SGD(self._network.parameters(), lr=self.lrate)
-        cost = torch.nn.MultiLabelSoftMarginLoss()
         for i, (inputs, targets) in enumerate(train_loader):
             inputs, targets = inputs.to(self._device), targets.to(self._device)
             logits = self._network(inputs)["logits"]
-            loss = cost(logits[:, self._known_classes:], targets)
+            seen_targets = self._targets_to_seen(targets)
+            loss = self.cls_criterion(logits, seen_targets)
             optimizer.zero_grad()
             loss.backward()
             for n, p in self._network.named_parameters():

@@ -27,5 +27,6 @@
     "init_weight_decay": 0.01,
     "weight_decay": 0.01,
     "save_results": true,
+    "save_detailed_results": true,
     "lamda_kd_logits": 1
 }

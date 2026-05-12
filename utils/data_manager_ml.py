@@ -10,6 +10,8 @@ class DataManager(object):
     def __init__(self, dataset_name, init_cls, increment, data_all, total_class=None):
         self.dataset_name = dataset_name
         self.total_class = total_class or self._infer_total_class(dataset_name)
+        # 构造类别增量学习的任务序列。
+        # 例如 EMOTIC 的 B5I3：第一个任务 5 类，后续任务每次新增 3 类。
         self._increments = [init_cls]
         while sum(self._increments) + increment <= self.total_class:
             self._increments.append(increment)
@@ -45,26 +47,33 @@ class DataManager(object):
 
     def get_dataset(self, task_now, source,appendent=None,ret_data=False,affective=False):
         sub_data,label,affective_dimension = self.data_all
+        # label_session 里保存每个任务的训练标签/索引和测试标签/索引。
+        # 这些索引来自 .mat 文件，是从 1 开始计数的，所以取 numpy 数据前要减 1。
         label_now = [label[element[task_now]][:] for element in label['label_session']]
         train_label = np.transpose(label_now[0]).astype('float32')
         train_index = np.transpose(label_now[1])
         test_label = np.transpose(label_now[2]).astype('float32')
         test_index = np.transpose(label_now[3])
         if source == "train":
+            # train_x 是当前任务的样本特征；train_y 是 multi-hot 标签矩阵，
+            # 不是单个类别编号。一行里可以有多个 1，表示多个情绪同时存在。
             train_x = torch.from_numpy(sub_data[np.int64(np.squeeze(train_index-1))])
             train_y = torch.from_numpy(train_label)
+            # CLIF 还会读取情感维度向量，用它和模型特征做“关系蒸馏”。
             train_affective_dimension = torch.from_numpy(affective_dimension[np.int64(np.squeeze(train_index-1))])
             if appendent is not None:
                 appendent_data, appendent_targets_ori = appendent
                 appendent_data = torch.from_numpy(appendent_data)
+                target_width = self.get_accumulate_tasksize(task_now)
                 appendent_targets = []
                 for temp in appendent_targets_ori:
-                    multi_hot_vector = np.zeros(self.get_accumulate_tasksize(task_now))
+                    multi_hot_vector = np.zeros(target_width)
                     multi_hot_vector[temp] = 1
                     appendent_targets.append(list(multi_hot_vector))
                 appendent_targets = torch.from_numpy(np.array(appendent_targets))
                 train_x = torch.cat((train_x,appendent_data),dim=0)
-                train_y = torch.hstack((torch.zeros([train_y.shape[0], self.get_accumulate_tasksize(task_now-1)]), train_y))
+                if train_y.shape[1] != target_width:
+                    train_y = torch.hstack((torch.zeros([train_y.shape[0], self.get_accumulate_tasksize(task_now-1)]), train_y))
                 train_y = torch.cat((train_y,appendent_targets),dim=0)
             print('train_samples_all = ', train_x.shape[0])
             if ret_data:

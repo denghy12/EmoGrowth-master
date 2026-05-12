@@ -1,4 +1,5 @@
 import copy
+import csv
 import logging
 import random
 
@@ -6,6 +7,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from utils.ml_losses import build_multilabel_loss
 from utils.toolkit import tensor2numpy, accuracy
 from utils.metrics import average_precision,all_metrics
 try:
@@ -43,6 +45,65 @@ class BaseLearner(object):
         self.label_adj = None
         self.train_x_ld = None
         self.running_statistics = []
+        self.loss_type = args.get("loss_type", "softmargin")
+        self.loss_params = args.get("loss_params", {})
+        self.kd_loss_type = args.get("kd_loss_type", "auto")
+        self.kd_loss_params = args.get("kd_loss_params", {})
+        self.train_assignment_mode = args.get("train_assignment_mode", "repeat_current")
+        self.train_label_mode = args.get("train_label_mode", "current")
+        self.agcnpp_protocol = args.get("agcnpp_protocol", "auto")
+
+    def _loss_details_enabled(self):
+        return bool(self.args.get("loss_detail_path"))
+
+    @staticmethod
+    def _loss_value(value):
+        if value is None:
+            return np.nan
+        if hasattr(value, "detach"):
+            return float(value.detach().cpu())
+        return float(value)
+
+    def _append_loss_details(self, epoch, phase, loss_sums, num_batches):
+        if not self._loss_details_enabled() or num_batches <= 0:
+            return
+
+        fields = [
+            "trained_task",
+            "epoch",
+            "phase",
+            "num_batches",
+            "loss_total",
+            "loss_clf",
+            "loss_kd_logits",
+            "loss_clf_plus_kd_logits",
+            "loss_le",
+            "loss_kd_model",
+            "loss_kd_aff",
+            "weighted_loss_kd_logits",
+            "weighted_loss_le",
+            "weighted_loss_kd_model",
+            "weighted_loss_kd_aff",
+        ]
+        path = self.args["loss_detail_path"]
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        exists = os.path.exists(path)
+
+        row = {
+            "trained_task": self._cur_task,
+            "epoch": epoch,
+            "phase": phase,
+            "num_batches": num_batches,
+        }
+        for field in fields[4:]:
+            value = loss_sums.get(field, np.nan)
+            row[field] = float(value) / float(num_batches) if np.isfinite(value) else np.nan
+
+        with open(path, "a", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            if not exists:
+                writer.writeheader()
+            writer.writerow(row)
     @property
     def exemplar_size(self):
         assert len(self._data_memory) == len(
@@ -131,9 +192,14 @@ class BaseLearner(object):
 
         return cnn_accy, nme_accy
 
-    def eval_multi_label_task(self,clif=False,agcn=False):
-        test_map, test_other_metrics = self._compute_multi_label_accuracy(self._network, self.test_loader,clif=clif,agcn=agcn)
-        return test_map, test_other_metrics
+    def eval_multi_label_task(self, clif=False, agcn=False, return_outputs=False):
+        return self._compute_multi_label_accuracy(
+            self._network,
+            self.test_loader,
+            clif=clif,
+            agcn=agcn,
+            return_outputs=return_outputs,
+        )
 
     def incremental_train(self):
         pass
@@ -153,6 +219,115 @@ class BaseLearner(object):
         else:
             return (self._data_memory, self._targets_memory_ml)
 
+    def _targets_are_seen_labels(self, targets):
+        return targets.shape[1] == self._total_classes
+
+    def _targets_to_current_task(self, targets):
+        if self._known_classes == 0 or not self._targets_are_seen_labels(targets):
+            return targets
+        return targets[:, self._known_classes : self._total_classes]
+
+    def _targets_to_seen(self, targets):
+        if self._targets_are_seen_labels(targets) or self._known_classes == 0:
+            return targets
+        zeros = torch.zeros(
+            [targets.shape[0], self._known_classes],
+            dtype=targets.dtype,
+            device=targets.device,
+        )
+        return torch.hstack((zeros, targets))
+
+    def _resolve_train_label_mode(self):
+        if self.train_label_mode in ("current", "seen"):
+            return self.train_label_mode
+        protocol = str(self.agcnpp_protocol).lower()
+        if protocol == "cl":
+            return "seen"
+        return "current"
+
+    def _validate_seen_labels_available(self, train_targets, target_mode):
+        if target_mode != "seen" or self._known_classes == 0:
+            return
+        if not self._targets_are_seen_labels(train_targets):
+            raise ValueError(
+                "train_label_mode='seen' requires a label_session whose train labels "
+                "cover all seen classes. Rebuild the EMOTIC split with "
+                "--train-assignment-mode repeat_current --train-label-mode seen."
+            )
+
+    def _targets_for_train_label_mode(self, targets, target_mode):
+        if target_mode == "seen":
+            return self._targets_to_seen(targets)
+        if target_mode == "current":
+            return self._targets_to_current_task(targets)
+        raise ValueError(f"Unsupported train label mode: {target_mode}")
+
+    def _logits_for_train_label_mode(self, logits, target_mode):
+        if target_mode == "seen":
+            return logits[:, : self._total_classes]
+        if target_mode == "current":
+            return logits[:, self._known_classes : self._total_classes]
+        raise ValueError(f"Unsupported train label mode: {target_mode}")
+
+    def _target_row_to_global_indices(self, target_row):
+        positive_indices = np.where(target_row == 1)[0]
+        if target_row.shape[0] == self._total_classes:
+            return positive_indices.tolist()
+        return (positive_indices + self._known_classes).tolist()
+
+    def _target_row_to_seen(self, target_row):
+        if target_row.shape[0] == self._total_classes:
+            return target_row
+        return np.pad(target_row, (self._known_classes, 0), mode="constant")
+
+    def _build_multilabel_criterion(self, train_targets, target_mode):
+        if target_mode == "seen":
+            criterion_targets = self._targets_to_seen(train_targets)
+        elif target_mode == "current":
+            criterion_targets = self._targets_to_current_task(train_targets)
+        else:
+            raise ValueError(f"Unsupported target mode: {target_mode}")
+        return build_multilabel_loss(
+            self.loss_type,
+            criterion_targets,
+            self._device,
+            self.loss_params,
+        )
+
+    def _resolve_kd_loss_type(self):
+        kd_loss_type = None if self.kd_loss_type is None else str(self.kd_loss_type).lower()
+        if kd_loss_type in (None, "auto"):
+            return "db" if str(self.loss_type).lower() == "db" else "softmargin"
+        if kd_loss_type == "same":
+            return str(self.loss_type).lower()
+        return kd_loss_type
+
+    def _build_kd_logits_criterion(self, soft_targets):
+        kd_loss_type = self._resolve_kd_loss_type()
+        if kd_loss_type == "softmargin":
+            return nn.MultiLabelSoftMarginLoss()
+
+        explicit_kd_loss_params = copy.deepcopy(self.kd_loss_params)
+        kd_loss_params = copy.deepcopy(self.loss_params) if kd_loss_type == str(self.loss_type).lower() else {}
+        kd_loss_params.update(explicit_kd_loss_params)
+        if kd_loss_type == "db":
+            kd_loss_params.setdefault("reweight_func", "rebalance")
+            for key, value in {
+                "focal": False,
+                "neg_scale": 1.0,
+                "init_bias": 0.0,
+                "weight_norm": "by_batch",
+            }.items():
+                if key not in explicit_kd_loss_params:
+                    kd_loss_params[key] = value
+
+        return build_multilabel_loss(
+            kd_loss_type,
+            soft_targets,
+            self._device,
+            kd_loss_params,
+        )
+
     def _compute_accuracy(self, model, loader):
         model.eval()
         correct, total = 0, 0
@@ -166,7 +341,17 @@ class BaseLearner(object):
 
         return np.around(tensor2numpy(correct) * 100 / total, decimals=2)
 
-    def _compute_multi_label_accuracy(self, model, loader,clif=False,train=False,update=False,er=False,agcn=False):
+    def _compute_multi_label_accuracy(
+        self,
+        model,
+        loader,
+        clif=False,
+        train=False,
+        update=False,
+        er=False,
+        agcn=False,
+        return_outputs=False,
+    ):
         model.eval()
         output = []
         label = []
@@ -181,8 +366,7 @@ class BaseLearner(object):
                         outputs,_ = model(inputs,label_adj)
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
             else:
@@ -193,8 +377,7 @@ class BaseLearner(object):
                         outputs,_ = model(inputs,label_adj)
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
         else:
@@ -206,8 +389,7 @@ class BaseLearner(object):
                         outputs = model(inputs,label_adj)
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
             else:
@@ -217,14 +399,15 @@ class BaseLearner(object):
                         outputs = model(inputs)["logits"]
                         if train:
                             outputs = outputs[:, self._known_classes:]
-                            if er:
-                                targets = targets[:, self._known_classes:]
+                            targets = self._targets_to_current_task(targets)
                     output.append(outputs.cpu().detach().numpy())
                     label.append(targets.cpu().detach().numpy())
         output = np.concatenate(output)
         label = np.concatenate(label)
         _, map = average_precision(torch.from_numpy(output), torch.from_numpy(label))
         other_metrics = all_metrics(output,label)
+        if return_outputs:
+            return map, other_metrics, output, label
         return map,other_metrics
 
     def _set_runtime_label_adj(self, model, label_adj):
@@ -511,8 +694,7 @@ class BaseLearner(object):
             else selected_exemplars
         )
         for index in selected_index:
-            fake_label_list = np.where(targets[index] == 1)[0]
-            label_list = [t+self._known_classes for t in fake_label_list]
+            label_list = self._target_row_to_global_indices(targets[index])
             self._targets_memory_ml.append(label_list)
 
     def _construct_exemplar_unified_ml_rs(self, data_manager, m):
@@ -530,8 +712,7 @@ class BaseLearner(object):
                 if random.randint(1,self.total_sample)<=m:
                     chosen_one = random.randint(0,m-1)
                     self._data_memory[chosen_one] = data[index]
-                    fake_label_list = np.where(targets[index] == 1)[0]
-                    label_list = [t + self._known_classes for t in fake_label_list]
+                    label_list = self._target_row_to_global_indices(targets[index])
                     self._targets_memory_ml[chosen_one] = label_list
             else:
                 selected_exemplars = np.expand_dims(data[index],axis=0)
@@ -540,8 +721,7 @@ class BaseLearner(object):
                     if len(self._data_memory) != 0
                     else selected_exemplars
                 )
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 self._targets_memory_ml.append(label_list)
 
     def _construct_exemplar_unified_ml_prs(self, data_manager, m):
@@ -556,8 +736,11 @@ class BaseLearner(object):
         ### initialization and updating running statistics
         running_statistics = self.running_statistics
         statistic_temp = np.sum(targets,axis=0)
-        running_statistics = running_statistics + statistic_temp.tolist()
-        running_statistics = np.array(running_statistics)
+        if targets.shape[1] == self._total_classes:
+            running_statistics = np.array(statistic_temp)
+        else:
+            running_statistics = running_statistics + statistic_temp.tolist()
+            running_statistics = np.array(running_statistics)
         ### compute target partion P and M ###
         N = running_statistics
         P = np.power(N,rou)/np.sum(np.power(N,rou))
@@ -567,7 +750,7 @@ class BaseLearner(object):
             self.total_sample += 1
             if self.exemplar_size == m:        ### buffer in full ###
                 ###sample-in###
-                temp = np.pad(targets[index],(self._known_classes,0),mode='constant') * np.exp(-N)
+                temp = self._target_row_to_seen(targets[index]) * np.exp(-N)
                 W = temp / np.sum(temp)
                 s = np.sum(M / N * W) ### probability of sample-in ###
                 if random.random() < s:
@@ -597,8 +780,7 @@ class BaseLearner(object):
                         K_min.append(np.sum(np.abs(Cki - P * np.sum(Cki))))
                     chosen_one = selected_index_K[np.argmin(np.array(K_min))]
                     self._data_memory[chosen_one] = data[index]
-                    fake_label_list = np.where(targets[index] == 1)[0]
-                    label_list = [t + self._known_classes for t in fake_label_list]
+                    label_list = self._target_row_to_global_indices(targets[index])
                     self._targets_memory_ml[chosen_one] = label_list
             else:                              ### buffer is not full ###
                 selected_exemplars = np.expand_dims(data[index],axis=0)
@@ -607,8 +789,7 @@ class BaseLearner(object):
                     if len(self._data_memory) != 0
                     else selected_exemplars
                 )
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 self._targets_memory_ml.append(label_list)
 
         self.running_statistics = running_statistics.tolist()
@@ -647,8 +828,7 @@ class BaseLearner(object):
                 else selected_exemplars
             )
             for index in chosen_index:
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 self._targets_memory_ml.append(label_list)
             data = np.delete(data,chosen_index,axis=0)
             targets = np.delete(targets,chosen_index,axis=0)
@@ -657,8 +837,7 @@ class BaseLearner(object):
             data = np.concatenate((self._data_memory, data))
             label_all = []
             for index in range(targets.shape[0]):
-                fake_label_list = np.where(targets[index] == 1)[0]
-                label_list = [t + self._known_classes for t in fake_label_list]
+                label_list = self._target_row_to_global_indices(targets[index])
                 label_all.append(label_list)
             targets = self._targets_memory_ml + label_all
             ### data targets M+b_t chose M ###
@@ -714,6 +893,9 @@ class BaseLearner(object):
 
 
     def sym_conditional_prob(self,y):
+        # 根据 multi-hot 标签统计情绪共现关系图。
+        # adj[i, j] 可以理解成“出现类别 i 时，类别 j 也出现的强度”；
+        # 最后做对称化，便于后面的图神经网络传播。
         adj = torch.matmul(y.t(), y)
         y_sum = torch.sum(y.t(), dim=1, keepdim=True)
         y_sum[y_sum < 1e-6] = 1e-6
@@ -724,6 +906,9 @@ class BaseLearner(object):
         return adj
 
     def sym_conditional_prob_update(self,soft_label,label_adj_old,y,ld=False):
+        # 后续增量任务通常只有新类别的硬标签，没有旧类别的硬标签。
+        # 所以这里用 old model 的 soft_label 补旧类别信息，再把旧-旧、新-新、
+        # 旧-新的关系拼成新的情绪关系图。
         trans = torch.nn.Sigmoid()
         soft_label = trans(soft_label)
         if ld:
